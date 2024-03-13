@@ -65,7 +65,7 @@ func Parse(input []byte) (*Root, error) {
 	var children []Node
 
 	backticks := "```"
-	fileBlockRegexString := `(?ms)^File: ([^\n]+)\n` + backticks + `(.*?)` + backticks + `\nEOF_([^\n]+)\n?`
+	fileBlockRegexString := `(?ms)^File: ([^\n]+)\n` + backticks + `(.*?)` + backticks + `\nEOF_([^\n]+)\s*`
 	fileBlockRegex := regexp.MustCompile(fileBlockRegexString)
 
 	matches := fileBlockRegex.FindAllSubmatchIndex(input, -1)
@@ -81,21 +81,24 @@ func Parse(input []byte) (*Root, error) {
 		eofName := string(input[match[6]:match[7]])
 
 		if fileName != eofName {
-			continue // EOF marker does not match file name; skip this block.
+			lastIndex = match[0] // Go back to start of the unmatched block
+			continue            // EOF marker does not match file name; skip this block.
 		}
 
 		children = append(children, &File{Name: fileName, Data: fileContent})
 
-		// Update lastIndex to just after the EOF marker.
-		lastIndex = match[7] + len("\n")
+		// Correctly update lastIndex to just after the EOF marker.
+		if match[7]+1 < len(input) && input[match[7]] == '\n' {
+			lastIndex = match[7] + 1
+		} else {
+			lastIndex = match[7]
+		}
 	}
 
-	// Append any trailing text after the last file block as a Text node.
-	if lastIndex <= len(input) {
-		trailingText := string(input[lastIndex:])
-		if len(trailingText) > 0 {
-			children = append(children, &Text{Data: trailingText})
-		}
+	// Append any trailing text after the last file block as a Text node, including text before unmatched block.
+	trailingText := string(input[lastIndex:])
+	if len(trailingText) > 0 {
+		children = append(children, &Text{Data: trailingText})
 	}
 
 	root := &Root{

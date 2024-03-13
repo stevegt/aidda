@@ -35,18 +35,19 @@ outfnsComma=$(echo $outfns | tr ' ' ',')
 
 sysmsgcode="You are an expert Go programmer.  Write or fix code in
 [$outfns] to make the tests pass.  Do not mock the results.  Write
-production-quality code. Do not attempt to enclose backticks in string
+production-quality code. Do not enclose backticks in string
 literals -- you can't escape backticks in Go, so you'll need to build
 string literals with embedded backticks by using string concatenation.
 If you see an error in the tests, say TESTERROR on a line by itself
 and suggest a fix."
 
-sysmsgtest="You are an expert Go programmer.  Add tests to [$outfns]
-to make the code more robust.  Do not alter existing tests.  Put test
-data in non-Go files if given.  Do not attempt to enclose backticks in
+sysmsgtest="You are an expert Go programmer.  Appends tests to
+[$outfns] to make the code more robust.  Do not alter or insert before
+existing tests.  Do not inline multiline test data in Go files -- put
+test data in the given output data files.  Do not enclose backticks in
 string literals -- you can't escape backticks in Go, so you'll need to
 build string literals with embedded backticks by using string
-concatenation.  If you see an error in the code, say CODEERROR on a
+concatenation. If you see an error in the code, say CODEERROR on a
 line by itself and suggest a fix."
 
 # ensure all input and output files are committed
