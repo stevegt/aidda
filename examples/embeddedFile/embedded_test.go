@@ -2,14 +2,36 @@ package embedded
 
 import (
 	"io/ioutil"
-	"strings"
+	"regexp"
 	"testing"
 
 	. "github.com/stevegt/goadapt"
 )
 
-func TestParse(t *testing.T) {
-	fn := "input.md"
+// Helper function to split a byte slice into lines.  Each line
+// includes a newline if the original line had one.
+func bytesToLines(buf []byte) []string {
+	txt := string(buf)
+	// use regexp to split on \n or \r\n
+	re := regexp.MustCompile(`(?ms)(^.*?(\r\n|\n))`)
+	lines := re.FindAllString(txt, -1)
+	return lines
+}
+
+func TestParse_EmptyInput(t *testing.T) {
+	ast, err := Parse([]byte(""))
+	if err != nil {
+		t.Fatal("should not have error on empty input")
+	}
+	if ast == nil || len(ast.Children()) != 0 {
+		t.Fatal("ast should be a non-nil root node with no children on empty input")
+	}
+
+}
+
+func TestParse_Functional(t *testing.T) {
+	// Functional test reading input from file
+	fn := "input.md" // Assuming the input file is in the test directory with the name 'input.md'.
 	buf, err := ioutil.ReadFile(fn)
 	if err != nil {
 		t.Fatal(err)
@@ -24,35 +46,28 @@ func TestParse(t *testing.T) {
 	lines := bytesToLines(buf)
 
 	// ensure the root node is a Root type
-	Tassert(t, ast.Type() == "Root", "ast is not a Root type")
+	Tassert(t, ast.Type() == "Root", "ast type expected %q, got %q", "Root", ast.Type())
 
 	// ensure the root node has 3 children
 	children := ast.Children()
-	Tassert(t, len(children) == 3)
+	Tassert(t, len(children) == 3, "root node expected %d children, got %d", 3, len(children))
 
 	// ensure the first child is a Text type
-	Tassert(t, children[0].Type() == "Text", "first child is not a Text type")
+	Tassert(t, children[0].Type() == "Text", "first child expected %q, got %q", "Text", children[0].Type())
 
 	// ensure the second child is a File type
-	Tassert(t, children[1].Type() == "File", "second child is not a File type")
+	Tassert(t, children[1].Type() == "File", "second child expected %q, got %q", "File", children[1].Type())
 
 	// ensure the third child is a Text type
-	Tassert(t, children[2].Type() == "Text", "third child is not a Text type")
+	Tassert(t, children[2].Type() == "Text", "third child expected %q, got %q", "Text", children[2].Type())
 
 	// ensure the first child content matches the first 2 lines of the input file
-	firstTwoLines := lines[0] + "\n" + lines[1]
+	firstTwoLines := lines[0] + lines[1]
 	firstContent := children[0].Content()
-	Tassert(t, firstContent == firstTwoLines, "first child content does not match first 2 lines of input file")
+	Tassert(t, firstContent == firstTwoLines, "first child content: expected %q, got %q", firstTwoLines, firstContent)
 
-	// ensure the third child content matches the last two lines of the input file
-	lastLines := lines[len(lines)-2] + "\n" + lines[len(lines)-1]
+	// ensure the third child content matches the last line of the input file
+	lastLine := lines[len(lines)-1]
 	thirdContent := children[2].Content()
-	Tassert(t, thirdContent == lastLines, Spf("third child content: expected %s, got %s", lastLines, thirdContent))
-}
-
-// bytesToLines splits a byte slice into lines
-func bytesToLines(buf []byte) []string {
-	txt := string(buf)
-	lines := strings.Split(txt, "\n")
-	return lines
+	Tassert(t, thirdContent == lastLine, "third child content: expected %q, got %q", lastLine, thirdContent)
 }

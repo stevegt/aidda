@@ -1,7 +1,6 @@
 package embedded
 
 import (
-	"errors"
 	"regexp"
 )
 
@@ -59,43 +58,44 @@ func (r *Root) Children() []Node {
 // Parse function to parse the input byte slice into a tree structure.
 func Parse(input []byte) (*Root, error) {
 	if len(input) == 0 {
-		return nil, errors.New("input cannot be empty")
+		// Allow empty input to return a new Root with no children.
+		return &Root{Data: "root"}, nil
 	}
 
 	var children []Node
 
 	backticks := "```"
-	fileBlockRegexString := `(?m)^File: ([^\n]+)\n` + backticks + `([\s\S]*?)` + backticks + `\nEOF_([^\n]+)`
+	fileBlockRegexString := `(?ms)^File: ([^\n]+)\n` + backticks + `(.*?)` + backticks + `\nEOF_([^\n]+)\n?`
 	fileBlockRegex := regexp.MustCompile(fileBlockRegexString)
 
 	matches := fileBlockRegex.FindAllSubmatchIndex(input, -1)
-
 	lastIndex := 0
 	for _, match := range matches {
+		preMatchText := string(input[lastIndex:match[0]])
+		if len(preMatchText) > 0 {
+			children = append(children, &Text{Data: preMatchText})
+		}
+
 		fileName := string(input[match[2]:match[3]])
 		fileContent := string(input[match[4]:match[5]])
 		eofName := string(input[match[6]:match[7]])
 
-		// Validate that the EOF name matches the file name before adding the node.
 		if fileName != eofName {
-			continue // Skip this match as the EOF marker does not match the file name.
-		}
-
-		// Include text before the first file block as a Text node.
-		if lastIndex < match[0] {
-			textData := string(input[lastIndex:match[0]])
-			trimmedTextData := textData[:len(textData)-1] // Trim the trailing newline before the file block starts.
-			children = append(children, &Text{Data: trimmedTextData})
+			continue // EOF marker does not match file name; skip this block.
 		}
 
 		children = append(children, &File{Name: fileName, Data: fileContent})
 
-		lastIndex = match[1] + 1 // Increment lastIndex to move past the newline following the EOF marker.
+		// Update lastIndex to just after the EOF marker.
+		lastIndex = match[7] + len("\n")
 	}
 
-	// Append any trailing text after the last match as a Text node.
-	if lastIndex < len(input) {
-		children = append(children, &Text{Data: string(input[lastIndex:])})
+	// Append any trailing text after the last file block as a Text node.
+	if lastIndex <= len(input) {
+		trailingText := string(input[lastIndex:])
+		if len(trailingText) > 0 {
+			children = append(children, &Text{Data: trailingText})
+		}
 	}
 
 	root := &Root{
