@@ -50,11 +50,11 @@ build string literals with embedded backticks by using string
 concatenation. If you see an error in the code, say CODEERROR on a
 line by itself and suggest a fix."
 
-# ensure all input and output files are committed
-stat=$(git status --porcelain $infns $outfns)
+# ensure repo is clean
+stat=$(git status --porcelain)
 if [ -n "$stat" ]
 then
-    echo "error: input and output files must be committed"
+    echo "error: changes must be committed"
     exit 1
 fi
 
@@ -78,6 +78,7 @@ do
                 # if tests pass, exit
                 if ! grep -q "FAIL" /tmp/$$.test
                 then
+                    grok chat /tmp/$$.chat -s "Recommend additional tests to improve coverage and robustness of code." < /tmp/$$.test
                     break
                 fi
                 ;;
