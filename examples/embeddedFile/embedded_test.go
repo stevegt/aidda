@@ -361,11 +361,14 @@ func TestParseEmptyInput(t *testing.T) {
 // TestParseShowJSON tests the parser's ability to generate a JSON representation of the AST.
 func TestParseASTString(t *testing.T) {
 	lex := NewLexer("foo\nFile: bar\n```\nbaz\n```\nEOF_bar\n")
+	Pl("lexing done")
 	ast, err := Parse(lex)
 	if err != nil {
 		t.Fatal(err)
 	}
+	Pl("parsing done")
 	j := ast.AsJSON()
+	Pl("AsJSON done")
 	Tassert(t, j != "", "expected non-empty JSON string, got %q", j)
 }
 
