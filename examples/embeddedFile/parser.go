@@ -2,14 +2,13 @@ package embedded
 
 import (
 	"encoding/json"
-	"strings"
 )
 
 // Parser prepares tokens from a lexer into an Abstract Syntax Tree.
 type Parser struct {
 	lexer  *Lexer  // Lexer instance
 	tokens []Token // Token buffer
-	pos    int     // Current position in token buffer
+	pos    int     // Current token position
 }
 
 // NewParser initializes a new parser from a lexer.
@@ -20,109 +19,117 @@ func NewParser(lexer *Lexer) *Parser {
 // ASTNode represents a node in the abstract syntax tree.
 type ASTNode struct {
 	Type     string     `json:"Type"`
-	Content  string     `json:"Content,omitempty"`
+	Content  string     `json:"Content"`
 	Name     string     `json:"Name,omitempty"`
 	Language string     `json:"Language,omitempty"`
 	Children []*ASTNode `json:"Children,omitempty"`
 }
 
-// Parse initializes the parsing process and generates an Abstract Syntax Tree from lexer tokens.
-func Parse(lexer *Lexer) (*ASTNode, error) {
-	parser := &Parser{lexer: lexer}
-	return parser.parseRoot(), nil
+// NewASTNode creates a new AST node given its type and content.
+func NewASTNode(nodeType, content string) *ASTNode {
+	return &ASTNode{Type: nodeType, Content: content}
 }
 
-// parseRoot creates the root of the AST and parses sections of the input.
-func (p *Parser) parseRoot() *ASTNode {
-	root := &ASTNode{Type: "Root"} // Creating root AST node without content, name or language.
-	for {
-		token := p.peek()
-		switch token.Type {
-		case "EOF": // End of tokens.
-			return root
-		case "FileStart": // Start of a new file content.
-			root.Children = append(root.Children, p.parseFile())
-		case "Text", "TripleBacktick":
-			root.Children = append(root.Children, p.parseText())
-		default:
-			p.next() // Skip unknown token types.
-		}
+func (p *Parser) next() Token {
+	if p.pos >= len(p.tokens) {
+		token := p.lexer.Next()
+		p.tokens = append(p.tokens, token)
 	}
+	token := p.tokens[p.pos]
+	p.pos++
+	return token
 }
 
-// parseText collects consecutive Text and "TripleBacktick" tokens into a single Text node, correcting newlines.
-func (p *Parser) parseText() *ASTNode {
-	var contentBuilder strings.Builder
-	for {
-		token := p.peek()
-		if token.Type != "Text" && token.Type != "TripleBacktick" {
-			break
-		}
-		if contentBuilder.Len() > 0 {
-			contentBuilder.WriteString("\n")
-		}
-		contentBuilder.WriteString(token.Data)
-		p.next()
-	}
-	return &ASTNode{Type: "Text", Content: contentBuilder.String()}
-}
-
-// parseFile processes FileStart and FileEnd tokens into a File AST node, handling content and language.
-func (p *Parser) parseFile() *ASTNode {
-	startToken := p.next() // Consume FileStart token.
-	fileNode := &ASTNode{Type: "File", Name: startToken.Data}
-	var contentBuilder strings.Builder
-
-	// Looking for file language after "TripleBacktick"
-	if p.peek().Type == "TripleBacktick" {
-		p.next()
-		if p.peek().Type == "Text" {
-			fileNode.Language = p.next().Data // Setting language of the file.
-			p.next()                           // Assuming next TripleBacktick closes code block.
-		}
-	}
-
-	// Collect content until FileEnd token is found matching the file name.
-	for p.peek().Type != "EOF" && !(p.peek().Type == "FileEnd" && p.peek().Data == startToken.Data) {
-		token := p.next()
-		if token.Type == "Text" {
-			if contentBuilder.Len() > 0 {
-				contentBuilder.WriteString("\n")
-			}
-			contentBuilder.WriteString(token.Data)
-		}
-	}
-
-	if p.peek().Type == "FileEnd" {
-		p.next() // Consume the FileEnd token.
-	}
-
-	fileNode.Content = contentBuilder.String()
-
-	return fileNode
-}
-
-// peek returns the next token without consuming it, loading more tokens if necessary.
 func (p *Parser) peek() Token {
-	if p.pos >= len(p.tokens) { // If we've reached the end of buffered tokens, load more from the lexer.
+	if p.pos >= len(p.tokens) {
 		token := p.lexer.Next()
 		p.tokens = append(p.tokens, token)
 	}
 	return p.tokens[p.pos]
 }
 
-// next consumes and returns the next token.
-func (p *Parser) next() Token {
-	token := p.peek()
-	p.pos++ // Advance to the next token.
-	return token
+func (p *Parser) parseRoot() *ASTNode {
+	root := NewASTNode("Root", "")
+	for {
+		token := p.peek()
+		switch token.Type {
+		case "EOF":
+			return root
+		case "Text", "TripleBacktick":
+			textNode := p.collateTextAndTripleBackticks()
+			root.Children = append(root.Children, textNode)
+		case "FileStart":
+			fileNode := p.parseFile()
+			root.Children = append(root.Children, fileNode)
+		default:
+			p.next()
+		}
+	}
 }
 
-// AsJSON converts an ASTNode to its JSON representation.
+func (p *Parser) collateTextAndTripleBackticks() *ASTNode {
+	content := ""
+	for {
+		token := p.peek()
+		if token.Type != "Text" && token.Type != "TripleBacktick" {
+			break
+		}
+		p.next() // consume token
+		if token.Type == "TripleBacktick" {
+			content += "```\n"
+		} else {
+			content += token.Data + "\n" // Ensure each text block ends with a newline
+		}
+	}
+	return NewASTNode("Text", content)
+}
+
+func (p *Parser) parseFile() *ASTNode {
+	fileStartToken := p.next() // consume FileStart
+	fileNode := NewASTNode("File", "")
+	fileNode.Name = fileStartToken.Data
+	codeBlockFound := false
+	
+	for {
+		token := p.peek()
+		if token.Type == "TripleBacktick" {
+			codeBlockFound = !codeBlockFound
+			if codeBlockFound {
+				// Consume the triple backtick and potentially a language tag
+				tripleBacktickToken := p.next()
+				// Check for language identifier only on the opening triple backtick
+				if fileNode.Language == "" && tripleBacktickToken.Data != "" {
+					fileNode.Language = tripleBacktickToken.Data
+				}
+			} else {
+				// Consume closing triple backtick
+				p.next()
+			}
+		} else if token.Type == "FileEnd" || token.Type == "EOF" {
+			p.next() // consume FileEnd or EOF
+			return fileNode // Finished file block
+		} else if token.Type == "Text" && codeBlockFound {
+			// Append text within triple backticks to File content
+			fileNode.Content += token.Data + "\n"
+			p.next()
+		} else {
+			p.next() // Skip unexpected tokens (outside code blocks)
+		}
+	}
+}
+
+// Parse runs the parser on the lexer's output and generates an AST.
+func Parse(lexer *Lexer) (*ASTNode, error) {
+	parser := NewParser(lexer)
+	root := parser.parseRoot()
+	return root, nil
+}
+
+// AsJSON returns the AST as a JSON string.
 func (n *ASTNode) AsJSON() string {
 	buf, err := json.MarshalIndent(n, "", "  ")
 	if err != nil {
-		return ""
+		return err.Error()
 	}
 	return string(buf)
 }
