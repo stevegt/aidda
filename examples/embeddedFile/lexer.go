@@ -1,5 +1,3 @@
-// Package embedded provides a simple Lexer for tokenizing embedded content
-// according to predefined rules.
 package embedded
 
 import (
@@ -44,19 +42,21 @@ func (l *Lexer) Next() Token {
 		return Token{Type: "EOF"}
 	}
 
-	// Enhanced check for newline to emitText method
-	// This ensures newline handling is considered in different contexts, including empty lines.
-	if l.input[l.pos] == '\n' { // Newline identified; emit as a separate text token
-		l.pos++ // Move past the newline character
-		return Token{Type: "Text", Data: ""}
-	}
+	tripleBacktick := "```"
+	/*
+		backtick := "`"
+		tbpat := `^` + tripleBacktick + `([^` + backtick + `]*|$)`
+		tbre := regexp.MustCompile(tbpat)
+	*/
 
 	if strings.HasPrefix(l.input[l.pos:], "File: ") {
 		return l.emitWithSkip("FileStart", "File: ")
 	} else if strings.HasPrefix(l.input[l.pos:], "EOF_") {
 		return l.emitWithSkip("FileEnd", "EOF_")
-	} else if strings.HasPrefix(l.input[l.pos:], "```") {
-		return l.emitWithSkip("TripleBacktick", "```")
+		// } else if tbre.MatchString(l.input[l.pos:]) {
+	} else if strings.HasPrefix(l.input[l.pos:], "```") && (l.pos+3 == len(l.input) || l.input[l.pos+3] != '`') {
+		// Enhanced handling to differentiate between opening and closing backticks
+		return l.emitWithSkip("TripleBacktick", tripleBacktick)
 	}
 
 	return l.emitText()
@@ -72,25 +72,41 @@ func (l *Lexer) emitWithSkip(tokenType, startMarker string) Token {
 	} else {
 		endPos += startPos
 	}
-	data := strings.TrimSpace(l.input[startPos:endPos])
+	data := l.input[startPos:endPos]
 	l.pos = endPos + 1 // Move past the newline
 	return Token{Type: tokenType, Data: data}
 }
 
-// emitText gathers and returns a text token ending at a newline or marker.
+// emitText gathers and returns a text token ending at a newline.
 func (l *Lexer) emitText() Token {
 	start := l.pos
-	for l.pos < len(l.input) && l.input[l.pos] != '\n' && !strings.HasPrefix(l.input[l.pos:], "File: ") && !strings.HasPrefix(l.input[l.pos:], "EOF_") && !strings.HasPrefix(l.input[l.pos:], "```") {
+	// Move to the end of the line or the end of the input
+	for l.pos < len(l.input) && l.input[l.pos] != '\n' {
 		l.pos++
 	}
-	data := strings.TrimSpace(l.input[start:l.pos])
+	data := l.input[start:l.pos]
 	if l.pos < len(l.input) && l.input[l.pos] == '\n' {
 		l.pos++ // Move past the newline, if present
 	}
-	if data == "" { // Avoid emitting empty text tokens except for explicit newlines
-		return l.Next() // Recur until a non-empty or meaningful token is found
-	}
 	return Token{Type: "Text", Data: data}
+}
+
+// emitCodeBlock differentiates between opening TripleBackticks possibly including a language identifier
+// and simple TripleBackticks that close a code block.
+func (l *Lexer) emitCodeBlock() Token {
+	startPos := l.pos + 3 // Skip the backticks themselves
+	l.pos = startPos
+
+	// Find the end of the line to check for a language identifier
+	endPos := strings.Index(l.input[startPos:], "\n")
+	if endPos == -1 {
+		l.pos = len(l.input) // Move to the end if there's no newline
+		return Token{Type: "TripleBacktick", Data: ""}
+	}
+
+	data := strings.TrimSpace(l.input[startPos : startPos+endPos])
+	l.pos = startPos + endPos + 1 // Move past the newline
+	return Token{Type: "TripleBacktick", Data: data}
 }
 
 // Run processes the entire input and returns all identified tokens.

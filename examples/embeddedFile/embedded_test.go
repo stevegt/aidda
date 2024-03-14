@@ -31,6 +31,26 @@ func TestLexerNewlinesOnly(t *testing.T) {
 	}
 }
 
+func TestLexerWhitespaceOnly(t *testing.T) {
+	// The lexer should return a single token for each line in the
+	// input, including lines with only whitespace.
+	lexer := NewLexer("  \n \n\n")
+	tokens := lexer.Run()
+	Tassert(t, len(tokens) == 4, "expected 4 tokens, got %#v", tokens)
+	for i, token := range tokens {
+		switch i {
+		case 0:
+			Tassert(t, token.Type == "Text" && token.Data == "  ", "expected '  ', got %#v", token)
+		case 1:
+			Tassert(t, token.Type == "Text" && token.Data == " ", "expected ' ', got %#v", token)
+		case 2:
+			Tassert(t, token.Type == "Text" && token.Data == "", "expected empty Text token, got %#v", token)
+		case 3:
+			Tassert(t, token.Type == "EOF", "expected EOF token, got %#v", token)
+		}
+	}
+}
+
 func TestLexerTextOnly(t *testing.T) {
 	// The lexer should return a single token for each line in the
 	// input, including empty lines.
@@ -53,6 +73,26 @@ func TestLexerTextOnly(t *testing.T) {
 	}
 }
 
+func TestLexerTextWithWhitespace(t *testing.T) {
+	// The lexer should return a single token for each line in the
+	// input, including empty lines and leading/trailing whitespace.
+	lexer := NewLexer("  foo\n  bar \n  baz  \n")
+	tokens := lexer.Run()
+	Tassert(t, len(tokens) == 4, "expected 4 tokens, got %#v", tokens)
+	for i, token := range tokens {
+		switch i {
+		case 0:
+			Tassert(t, token.Type == "Text" && token.Data == "  foo", "expected '  foo', got %#v", token)
+		case 1:
+			Tassert(t, token.Type == "Text" && token.Data == "  bar ", "expected '  bar ', got %#v", token)
+		case 2:
+			Tassert(t, token.Type == "Text" && token.Data == "  baz  ", "expected '  baz  ', got %#v", token)
+		case 3:
+			Tassert(t, token.Type == "EOF", "expected EOF token, got %#v", token)
+		}
+	}
+}
+
 func TestLexerTripleBacktick(t *testing.T) {
 	// The lexer should return a TripleBacktick token for each set of three backticks.
 	lexer := NewLexer("```\n```\n```\n")
@@ -64,6 +104,29 @@ func TestLexerTripleBacktick(t *testing.T) {
 		} else {
 			Tassert(t, token.Type == "TripleBacktick", "expected TripleBacktick token, got %#v", token)
 			Tassert(t, token.Data == "", "expected empty TripleBacktick token, got %#v", token)
+		}
+	}
+}
+
+func TestLexerNotTripleBacktick(t *testing.T) {
+	// The lexer should not return a TripleBacktick token for a line
+	// that does not start with three backticks.
+	lexer := NewLexer("```\n ```\n````\n")
+	tokens := lexer.Run()
+	Tassert(t, len(tokens) == 4, "expected 4 tokens, got %#v", tokens)
+	for i, token := range tokens {
+		switch i {
+		case 0:
+			Tassert(t, token.Type == "TripleBacktick", "expected TripleBacktick token, got %#v", token)
+			Tassert(t, token.Data == "", "expected empty TripleBacktick token, got %#v", token)
+		case 1:
+			Tassert(t, token.Type == "Text", "expected Text token, got %#v", token)
+			Tassert(t, token.Data == " ```", "expected ' ```', got %#v", token)
+		case 2:
+			Tassert(t, token.Type == "Text", "expected Text token, got %#v", token)
+			Tassert(t, token.Data == "````", "expected '````', got %#v", token)
+		case 3:
+			Tassert(t, token.Type == "EOF", "expected EOF token, got %#v", token)
 		}
 	}
 }
@@ -82,6 +145,28 @@ func TestLexerFileStart(t *testing.T) {
 			Tassert(t, token.Type == "FileStart", "expected FileStart token, got %#v", token)
 			Tassert(t, token.Data == "bar", "expected 'bar', got %#v", token)
 		case 2:
+			Tassert(t, token.Type == "EOF", "expected EOF token, got %#v", token)
+		}
+	}
+}
+
+func TestLexerNotFileStart(t *testing.T) {
+	// The lexer should not return a FileStart token for a line that does not start with "File: ".
+	lexer := NewLexer(" File: foo\nFile: bar\nNotFile: baz\n")
+	tokens := lexer.Run()
+	Tassert(t, len(tokens) == 4, "expected 4 tokens, got %#v", tokens)
+	for i, token := range tokens {
+		switch i {
+		case 0:
+			Tassert(t, token.Type == "Text", "expected Text token, got %#v", token)
+			Tassert(t, token.Data == " File: foo", "expected ' File: foo', got %#v", token)
+		case 1:
+			Tassert(t, token.Type == "FileStart", "expected FileStart token, got %#v", token)
+			Tassert(t, token.Data == "bar", "expected 'bar', got %#v", token)
+		case 2:
+			Tassert(t, token.Type == "Text", "expected Text token, got %#v", token)
+			Tassert(t, token.Data == "NotFile: baz", "expected 'NotFile: baz', got %#v", token)
+		case 3:
 			Tassert(t, token.Type == "EOF", "expected EOF token, got %#v", token)
 		}
 	}
@@ -137,7 +222,6 @@ func TestLexerBacktracking(t *testing.T) {
 	Tassert(t, token.Type == "EOF", "expected EOF, got %#v", token)
 }
 
-// Lexer is a line-based backtracking lexer.
 func TestLexerFunctional(t *testing.T) {
 	// Functional test reading input from file
 	fn := "input.md"
@@ -145,7 +229,6 @@ func TestLexerFunctional(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	Pf("buf: %q\n", buf)
 
 	lexer := NewLexer(string(buf))
 	// Run runs the lexer all the way through without backtracking and
@@ -231,6 +314,27 @@ func TestLexerBacktickLanguage(t *testing.T) {
 	}
 }
 
+func XXXTestLexerTextWithLeadingWhitespace(t *testing.T) {
+	// The lexer should not remove whitespace from text lines.
+	lexer := NewLexer("  foo\n  bar \n File: baz\n ```\n  \n EOF_baz\n")
+	tokens := lexer.Run()
+	Tassert(t, len(tokens) == 7, "expected 7 tokens, got %#v", tokens)
+	expectedTokens := []Token{
+		{Type: "Text", Data: "  foo"},
+		{Type: "Text", Data: "  bar "},
+		{Type: "Text", Data: " File: baz"},
+		{Type: "Text", Data: " ```"},
+		{Type: "Text", Data: "  "},
+		{Type: "Text", Data: " EOF_baz"},
+		{Type: "EOF", Data: ""},
+	}
+	for i, token := range tokens {
+		if token.Type != expectedTokens[i].Type || token.Data != expectedTokens[i].Data {
+			t.Fatalf("unexpected token %d: expected %v, got %v", i, expectedTokens[i], token)
+		}
+	}
+}
+
 // Helper function to split a byte slice into lines.  Each line
 // includes a newline if the original line had one.
 func bytesToLines(buf []byte) []string {
@@ -254,10 +358,8 @@ func TestParseEmptyInput(t *testing.T) {
 	}
 }
 
-/*
-
 // TestParseTextOnly tests the parser's behavior when the input contains only text.
-func XXXTestParseTextOnly(t *testing.T) {
+func TestParseTextOnly(t *testing.T) {
 	lex := NewLexer("test line 1\ntest line 2\n")
 	ast, err := Parse(lex)
 	if err != nil {
@@ -267,11 +369,45 @@ func XXXTestParseTextOnly(t *testing.T) {
 
 	// Expected behavior is to return a root node with a single Text child.
 	children := ast.Children()
-	Tassert(t, len(children) == 1, "expected %d children nodes, got %d", 1, len(children))
-	Tassert(t, children[0].Type() == "Text", "expected child to be of type %q, got %q", "Text", children[0].Type())
-	Tassert(t, children[0].Content() == "test line 1\ntest line 2", "expected child content to be %q, got %q", "test line 1\ntest line 2\n", children[0].Content())
+	Tassert(t, len(children) == 1, "expected %d children nodes, got %#v", 1, children)
+	Tassert(t, children[0].Type == "Text", "expected child to be of type %q, got %q", "Text", children[0].Type)
+	Tassert(t, children[0].Content == "test line 1\ntest line 2", "expected child content to be %q, got %q", "test line 1\ntest line 2\n", children[0].Content)
 }
 
+// TestParseFileBlockOnly tests the parser's behavior when the input contains only file blocks.
+func TestParseFileBlockOnly(t *testing.T) {
+	lex := NewLexer("File: foo\n```\nbar\n```\nEOF_foo\n")
+	ast, err := Parse(lex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	Tassert(t, ast != nil)
+
+	// Expected behavior is to return a root node with a single File child.
+	children := ast.Children()
+	Tassert(t, len(children) == 1, "expected %d children nodes, got %#v", 1, children)
+	Tassert(t, children[0].Type == "File", "expected child to be of type %q, got %q", "File", children[0].Type)
+	Tassert(t, children[0].Content == "bar\n", "expected child content to be %q, got %q", "bar\n", children[0].Content)
+}
+
+// TestParseFileBlockWithLanguage tests the parser's behavior when the input contains a file block with a language identifier.
+func TestParseFileBlockWithLanguage(t *testing.T) {
+	lex := NewLexer("File: foo\n```go\npackage main\n```\nEOF_foo\n")
+	ast, err := Parse(lex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	Tassert(t, ast != nil)
+
+	// Expected behavior is to return a root node with a single File child.
+	children := ast.Children()
+	Tassert(t, len(children) == 1, "expected %d children nodes, got %#v", 1, children)
+	Tassert(t, children[0].Type == "File", "expected child to be of type %q, got %q", "File", children[0].Type)
+	Tassert(t, children[0].Content == "package main\n", "expected child content to be %q, got %q", "package main\n", children[0].Content)
+	Tassert(t, children[0].Language == "go", "expected child language to be %q, got %q", "go", children[0].Language)
+}
+
+/*
 func XXXTestParseFunctional(t *testing.T) {
 	// Functional test reading input from file
 	fn := "input.md" // Assuming the input file is in the test directory with the name 'input.md'.
