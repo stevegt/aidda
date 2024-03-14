@@ -27,7 +27,6 @@ type ASTNode struct {
 }
 
 // NewASTNode creates a new AST node given its type and content.
-// This function is essential for creating new instances of ASTNode.
 func NewASTNode(nodeType, content string) *ASTNode {
 	return &ASTNode{Type: nodeType, Content: content}
 }
@@ -80,6 +79,9 @@ func (p *Parser) parseText() *ASTNode {
 		if token.Type != "Text" && token.Type != "TripleBacktick" {
 			break
 		}
+		if token.Type == "EOF" { // Assuring End of File handling
+			break
+		}
 		p.next() // Consume the token.
 		if token.Type == "TripleBacktick" {
 			content.WriteString("```\n")
@@ -101,6 +103,7 @@ func (p *Parser) parseFile() *ASTNode {
 	fileNode := NewASTNode("File", "")
 	fileNode.Name = startToken.Data
 	content := strings.Builder{}
+	languageParsed := false
 	for {
 		token := p.next()
 		if token.Type == "FileEnd" && token.Data == startToken.Data {
@@ -108,7 +111,12 @@ func (p *Parser) parseFile() *ASTNode {
 		} else if token.Type == "EOF" {
 			break // Handle case without EOF marker
 		} else if token.Type == "TripleBacktick" {
-			content.WriteString("```\n")
+			if !languageParsed { // Capturing the language identifier
+				languageParsed = true
+				fileNode.Language = p.next().Data // Consuming and setting language
+				p.next() // Skip closing triple backtick
+				continue
+			}
 		} else {
 			content.WriteString(token.Data + "\n")
 		}
