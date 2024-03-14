@@ -151,7 +151,8 @@ do
     # commit new code or tests
     set -x
     git add $infns $outfns 
-    git commit -m "$cmdline" 
+    grok commit > /tmp/$$.commit
+    git commit -F /tmp/$$.commit
     set +x
 
     # look for TESTERROR or CODEERROR
