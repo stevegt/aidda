@@ -26,11 +26,6 @@ type ASTNode struct {
 	Children []*ASTNode `json:"Children,omitempty"`
 }
 
-// NewASTNode creates a new AST node given its type and optional information.
-func NewASTNode(nodeType, content, name, language string) *ASTNode {
-	return &ASTNode{Type: nodeType, Content: content, Name: name, Language: language}
-}
-
 // Parse initializes the parsing process and generates an Abstract Syntax Tree from lexer tokens.
 func Parse(lexer *Lexer) (*ASTNode, error) {
 	parser := &Parser{lexer: lexer}
@@ -39,9 +34,8 @@ func Parse(lexer *Lexer) (*ASTNode, error) {
 
 // parseRoot creates the root of the AST and parses sections of the input.
 func (p *Parser) parseRoot() *ASTNode {
-	root := NewASTNode("Root", "", "", "") // Creating root AST node without content, name or language.
+	root := &ASTNode{Type: "Root"} // Creating root AST node without content, name or language.
 	for {
-		// Peek at the next token to decide what to do without consuming it.
 		token := p.peek()
 		switch token.Type {
 		case "EOF": // End of tokens.
@@ -56,39 +50,46 @@ func (p *Parser) parseRoot() *ASTNode {
 	}
 }
 
-// parseText collects consecutive Text tokens and returns a single Text node.
+// parseText collects consecutive Text and "TripleBacktick" tokens into a single Text node, correcting newlines.
 func (p *Parser) parseText() *ASTNode {
 	var contentBuilder strings.Builder
-	for p.peek().Type == "Text" || p.peek().Type == "TripleBacktick" {
-		token := p.next()
-		contentBuilder.WriteString(token.Data)
-		if token.Type == "Text" {
-			contentBuilder.WriteString("\n") // Add newline for text content, separated by Text tokens.
+	for {
+		token := p.peek()
+		if token.Type != "Text" && token.Type != "TripleBacktick" {
+			break
 		}
+		if contentBuilder.Len() > 0 {
+			contentBuilder.WriteString("\n")
+		}
+		contentBuilder.WriteString(token.Data)
+		p.next()
 	}
-	content := strings.TrimSuffix(contentBuilder.String(), "\n") // Remove the last newline added.
-	return NewASTNode("Text", content, "", "")
+	return &ASTNode{Type: "Text", Content: contentBuilder.String()}
 }
 
-// parseFile processes FileStart, FileEnd, and internal content into a File AST node.
+// parseFile processes FileStart and FileEnd tokens into a File AST node, handling content and language.
 func (p *Parser) parseFile() *ASTNode {
 	startToken := p.next() // Consume FileStart token.
+	fileNode := &ASTNode{Type: "File", Name: startToken.Data}
 	var contentBuilder strings.Builder
-	var language string
 
-	// Collect content until FileEnd token is found that matches the file name.
-	for !(p.peek().Type == "FileEnd" && p.peek().Data == startToken.Data) && p.peek().Type != "EOF" {
+	// Looking for file language after "TripleBacktick"
+	if p.peek().Type == "TripleBacktick" {
+		p.next()
+		if p.peek().Type == "Text" {
+			fileNode.Language = p.next().Data // Setting language of the file.
+			p.next()                           // Assuming next TripleBacktick closes code block.
+		}
+	}
+
+	// Collect content until FileEnd token is found matching the file name.
+	for p.peek().Type != "EOF" && !(p.peek().Type == "FileEnd" && p.peek().Data == startToken.Data) {
 		token := p.next()
-		if token.Type == "TripleBacktick" {
-			// Next token should specify the language or be the end of the code block.
-			languageToken := p.next()
-			if languageToken.Type == "Text" { // Language specified.
-				language = languageToken.Data
-				p.next() // Assume the next TripleBacktick token is the end of the code block, so consume it.
+		if token.Type == "Text" {
+			if contentBuilder.Len() > 0 {
+				contentBuilder.WriteString("\n")
 			}
-		} else {
 			contentBuilder.WriteString(token.Data)
-			contentBuilder.WriteString("\n")
 		}
 	}
 
@@ -96,9 +97,9 @@ func (p *Parser) parseFile() *ASTNode {
 		p.next() // Consume the FileEnd token.
 	}
 
-	content := strings.TrimSuffix(contentBuilder.String(), "\n") // Remove the last newline added.
+	fileNode.Content = contentBuilder.String()
 
-	return NewASTNode("File", content, startToken.Data, language)
+	return fileNode
 }
 
 // peek returns the next token without consuming it, loading more tokens if necessary.
@@ -125,4 +126,3 @@ func (n *ASTNode) AsJSON() string {
 	}
 	return string(buf)
 }
-
