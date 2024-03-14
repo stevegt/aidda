@@ -89,39 +89,33 @@ func (p *Parser) parseFile() *ASTNode {
 	fileNode := NewASTNode("File", "")
 	fileNode.Name = fileStartToken.Data
 	codeBlockFound := false
-
+	
 	for {
-		token := p.peek() 
+		token := p.peek()
 		if token.Type == "TripleBacktick" {
 			codeBlockFound = !codeBlockFound
 			if codeBlockFound {
 				// Consume the triple backtick and potentially a language tag
-				tripleBacktickToken := p.next() 
+				tripleBacktickToken := p.next()
 				// Check for language identifier only on the opening triple backtick
 				if fileNode.Language == "" && tripleBacktickToken.Data != "" {
 					fileNode.Language = tripleBacktickToken.Data
 				}
 			} else {
 				// Consume closing triple backtick
-				p.next() 
+				p.next()
 			}
-		} else if token.Type == "FileEnd" && token.Data == fileNode.Name {
-			// Ensure that we only end the file block if the EOF marker matches the file name
-			p.next() // consume FileEnd
-			break // Finished file block
+		} else if token.Type == "FileEnd" || token.Type == "EOF" {
+			p.next() // consume FileEnd or EOF
+			return fileNode // Finished file block
 		} else if token.Type == "Text" && codeBlockFound {
 			// Append text within triple backticks to File content
 			fileNode.Content += token.Data + "\n"
-			p.next() 
+			p.next()
 		} else {
-			// Move to the next token if we're not in a code block or reaching the file end matching this file's name
-			if !codeBlockFound {
-				break // Process text outside of file block as regular text block
-			}
 			p.next() // Skip unexpected tokens (outside code blocks)
 		}
 	}
-	return fileNode
 }
 
 // Parse runs the parser on the lexer's output and generates an AST.
@@ -139,4 +133,3 @@ func (n *ASTNode) AsJSON() string {
 	}
 	return string(buf)
 }
-
