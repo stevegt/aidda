@@ -48,37 +48,19 @@ func (p *Parser) peek() Token {
 	return p.tokens[p.pos]
 }
 
-func (p *Parser) rollBackToLastCheckpoint() {
-	if p.pos > 0 {
-		// Move one position back
-		p.pos--
-	}
-	if len(p.tokens) > p.pos {
-		p.tokens = p.tokens[:p.pos] // Truncate tokens at the current position
-	}
-	p.lexer.Rollback()
-}
-
 func (p *Parser) parseRoot() *ASTNode {
 	root := NewASTNode("Root", "")
 	for {
-	p.lexer.Checkpoint()
-	token := p.peek()
-	switch token.Type {
+		token := p.peek()
+		switch token.Type {
 		case "EOF":
 			return root
 		case "Text", "TripleBacktick":
 			textNode := p.collateTextAndTripleBackticks()
 			root.Children = append(root.Children, textNode)
 		case "FileStart":
-			fileNode := p.attemptParseFile()
-			if fileNode != nil {
-				root.Children = append(root.Children, fileNode)
-			} else {
-				// Parsing as file failed, tokenizer has been rolled back, parse as text
-				textNode := p.collateTextAndTripleBackticks()
-				root.Children = append(root.Children, textNode)
-			}
+			fileNode := p.parseFile()
+			root.Children = append(root.Children, fileNode)
 		default:
 			p.next()
 		}
@@ -93,43 +75,47 @@ func (p *Parser) collateTextAndTripleBackticks() *ASTNode {
 			break
 		}
 		p.next() // consume token
-		if token.Type == "TripleBacktick" {
-			content += "```\n"
-		} else {
-			content += token.Data + "\n" // Ensure each text block ends with a newline
-		}
+		content += token.Data + "\n" // Ensure each text block ends with a newline
 	}
 	return NewASTNode("Text", content)
 }
 
-func (p *Parser) attemptParseFile() *ASTNode {
-	lastCheckpointRollbackPos := len(p.tokens)
+func (p *Parser) parseFile() *ASTNode {
 	fileStartToken := p.next() // consume FileStart
 	fileNode := NewASTNode("File", "")
 	fileNode.Name = fileStartToken.Data
-	codeBlockFound := false
+	// Reset language for each file parse attempt to ensure it isn't incorrectly carried over
+	fileNode.Language = ""
+	openingCodeBlock := false // Track the state of code block opening/closing
 	
 	for {
 		token := p.peek()
 		if token.Type == "FileEnd" && token.Data == fileNode.Name {
 			p.next() // consume FileEnd
-			return fileNode // Successfully finished file block
-		} else if token.Type == "EOF" {
-			// Encountered EOF without closing FileEnd, rollback to last checkpoint
-			p.pos = lastCheckpointRollbackPos // Reset parser's position to before attempting to parse file
-			p.rollBackToLastCheckpoint() // Rollback lexer to last checkpoint before "FileStart"
-			return nil // Signal failure to parse as file
+			return fileNode // Finished file block
 		} else if token.Type == "TripleBacktick" {
-			codeBlockFound = !codeBlockFound
-			p.next() // Consume triple backtick
-		} else if token.Type == "Text" && codeBlockFound {
+			if !openingCodeBlock {
+				openingCodeBlock = true
+				languageToken := p.next() // Capture the possible language specification
+				if languageToken.Data != "" {
+					fileNode.Language = languageToken.Data
+				}
+			} else {
+				openingCodeBlock = false
+				p.next() // Closing backtick, simply consume it
+			}
+		} else if token.Type == "Text" && openingCodeBlock {
 			// Append text within triple backticks to File content
 			fileNode.Content += token.Data + "\n"
 			p.next()
+		} else if token.Type == "EOF" {
+			// Incomplete file block encountered, treat remaining content as Text
+			break
 		} else {
-			p.next() // Skip unexpected tokens
+			p.next() // Consume and ignore unexpected tokens
 		}
 	}
+	return NewASTNode("Text", "Incorrect File Block")
 }
 
 // Parse runs the parser on the lexer's output and generates an AST.
@@ -147,4 +133,3 @@ func (n *ASTNode) AsJSON() string {
 	}
 	return string(buf)
 }
-
