@@ -161,9 +161,9 @@ do
         break
     fi
 
-    # limit runtime to 10 minutes
+    # limit runtime to 20 minutes
     endTime=$(date +%s)
-    if [ $(($endTime - $startTime)) -gt 600 ]
+    if [ $(($endTime - $startTime)) -gt 1200 ]
     then
         echo "error: time limit exceeded"
         break
