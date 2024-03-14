@@ -174,6 +174,63 @@ func TestLexerFunctional(t *testing.T) {
 	}
 }
 
+func TestLexerMixedContent(t *testing.T) {
+	// The lexer should return a mix of Text, FileStart, FileEnd, and TripleBacktick tokens.
+	lexer := NewLexer("foo\nFile: bar\n```\n\nbaz\n```\nEOF_bar\n")
+	tokens := lexer.Run()
+	Tassert(t, len(tokens) == 8, "expected 8 tokens, got %#v", tokens)
+	expectedTokens := []Token{
+		{Type: "Text", Data: "foo"},
+		{Type: "FileStart", Data: "bar"},
+		{Type: "TripleBacktick", Data: ""},
+		{Type: "Text", Data: ""},
+		{Type: "Text", Data: "baz"},
+		{Type: "TripleBacktick", Data: ""},
+		{Type: "FileEnd", Data: "bar"},
+		{Type: "EOF", Data: ""},
+	}
+	for i, token := range tokens {
+		if token.Type != expectedTokens[i].Type || token.Data != expectedTokens[i].Data {
+			t.Fatalf("unexpected token %d: expected %v, got %v", i, expectedTokens[i], token)
+		}
+	}
+}
+
+func TestLexerMissingNewline(t *testing.T) {
+	// The lexer should handle input without a trailing newline.
+	lexer := NewLexer("foo\nbar")
+	tokens := lexer.Run()
+	Tassert(t, len(tokens) == 3, "expected 3 tokens, got %#v", tokens)
+	expectedTokens := []Token{
+		{Type: "Text", Data: "foo"},
+		{Type: "Text", Data: "bar"},
+		{Type: "EOF", Data: ""},
+	}
+	for i, token := range tokens {
+		if token.Type != expectedTokens[i].Type || token.Data != expectedTokens[i].Data {
+			t.Fatalf("unexpected token %d: expected %v, got %v", i, expectedTokens[i], token)
+		}
+	}
+}
+
+func TestLexerBacktickLanguage(t *testing.T) {
+	// The lexer should handle input with a language identifier after the opening backticks.
+	lexer := NewLexer("```go\npackage main\n```\n")
+	tokens := lexer.Run()
+	Tassert(t, len(tokens) == 4, "expected 4 tokens, got %#v", tokens)
+	expectedTokens := []Token{
+		{Type: "TripleBacktick", Data: "go"},
+		{Type: "Text", Data: "package main"},
+		{Type: "TripleBacktick", Data: ""},
+		{Type: "EOF", Data: ""},
+	}
+	for i, token := range tokens {
+		if token.Type != expectedTokens[i].Type || token.Data != expectedTokens[i].Data {
+			t.Fatalf("unexpected token %d: expected %v, got %v", i, expectedTokens[i], token)
+		}
+	}
+}
+
 // Helper function to split a byte slice into lines.  Each line
 // includes a newline if the original line had one.
 func bytesToLines(buf []byte) []string {
@@ -184,10 +241,9 @@ func bytesToLines(buf []byte) []string {
 	return lines
 }
 
-/*
 // The parser uses the backtracking lexer and a state machine to
 // process input as it encounters different tokens.
-func XXXTestParseEmptyInput(t *testing.T) {
+func TestParseEmptyInput(t *testing.T) {
 	lex := NewLexer("")
 	ast, err := Parse(lex)
 	if err != nil {
@@ -197,6 +253,8 @@ func XXXTestParseEmptyInput(t *testing.T) {
 		t.Fatal("ast should be a non-nil root node with no children on empty input")
 	}
 }
+
+/*
 
 // TestParseTextOnly tests the parser's behavior when the input contains only text.
 func XXXTestParseTextOnly(t *testing.T) {
