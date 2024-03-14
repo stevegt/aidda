@@ -1,22 +1,37 @@
 package embedded
 
-// Parser parses tokens from a lexer into an Abstract Syntax Tree.
+import (
+	"encoding/json"
+)
+
+// Parser prepares tokens from a lexer into an Abstract Syntax Tree.
 type Parser struct {
-	lexer  *Lexer       // Lexer instance to draw tokens from
-	tokens []Token      // Buffer of tokens read from the lexer
-	pos    int          // Current position in the tokens buffer
+	lexer  *Lexer  // Lexer instance
+	tokens []Token // Token buffer
+	pos    int     // Current token position
 }
 
-// NewParser creates a new Parser instance given a lexer.
+// NewParser initializes a new parser from a lexer.
 func NewParser(lexer *Lexer) *Parser {
-	return &Parser{
-		lexer: lexer,
-	}
+	return &Parser{lexer: lexer}
 }
 
-// next returns the next token from the buffer, loading new tokens from the lexer as needed.
+// ASTNode represents a node in the abstract syntax tree.
+type ASTNode struct {
+	Type     string     `json:"Type"`
+	Content  string     `json:"Content"`
+	Name     string     `json:"Name,omitempty"`
+	Language string     `json:"Language,omitempty"`
+	Children []*ASTNode `json:"Children,omitempty"`
+}
+
+// NewASTNode creates a new AST node given its type and content.
+func NewASTNode(nodeType, content string) *ASTNode {
+	return &ASTNode{Type: nodeType, Content: content}
+}
+
 func (p *Parser) next() Token {
-	if p.pos >= len(p.tokens) { // Need more tokens
+	if p.pos >= len(p.tokens) {
 		token := p.lexer.Next()
 		p.tokens = append(p.tokens, token)
 	}
@@ -25,124 +40,96 @@ func (p *Parser) next() Token {
 	return token
 }
 
-// peek returns the next token without advancing the parser's position.
 func (p *Parser) peek() Token {
-	if p.pos >= len(p.tokens) { // Need more tokens
+	if p.pos >= len(p.tokens) {
 		token := p.lexer.Next()
 		p.tokens = append(p.tokens, token)
 	}
 	return p.tokens[p.pos]
 }
 
-// parseRoot parses the input into a root AST node.
 func (p *Parser) parseRoot() *ASTNode {
 	root := NewASTNode("Root", "")
-
-	var lastText *ASTNode
 	for {
 		token := p.peek()
 		switch token.Type {
 		case "EOF":
 			return root
-		case "Text":
-			if lastText != nil {
-				// Append new text content to the last Text node
-				lastText.Content += "\n" + token.Data
-				p.next() // consume the Text token
-			} else {
-				lastText = p.parseText()
-				root.addChild(lastText)
-			}
+		case "Text", "TripleBacktick":
+			textNode := p.collateTextAndTripleBackticks()
+			root.Children = append(root.Children, textNode)
 		case "FileStart":
-			child := p.parseFile()
-			root.addChild(child)
-			lastText = nil // reset lastText pointer
+			fileNode := p.parseFile()
+			root.Children = append(root.Children, fileNode)
 		default:
-			p.next() // Skip unexpected token
-			lastText = nil // reset lastText pointer
+			p.next()
 		}
 	}
 }
 
-// parseText consumes and returns a text node.
-func (p *Parser) parseText() *ASTNode {
-	token := p.next() // consume the text token
-	if token.Type == "Text" {
-		return NewASTNode("Text", token.Data)
-	}
-	return NewASTNode("Error", "expected a text token")
-}
-
-// parseFile parses a file block, including its content, and returns a file node.
-func (p *Parser) parseFile() *ASTNode {
-	p.next() // consume the FileStart token, it's not directly used
-
-	fileNode := NewASTNode("File", "")
-
-	// Collect content until FileEnd or EOF. Include the newline as per test requirement.
+func (p *Parser) collateTextAndTripleBackticks() *ASTNode {
 	content := ""
-	language := ""
-	inCodeBlock := false
 	for {
 		token := p.peek()
-		if token.Type == "FileEnd" {
-			fileNode.Name = token.Data // Set file node name after consuming FileEnd token
-			p.next() // consume the FileEnd token
+		if token.Type != "Text" && token.Type != "TripleBacktick" {
 			break
-		} else if token.Type == "EOF" {
-			break // stop at EOF even if matching FileEnd not found
-		} else if token.Type == "TripleBacktick" {
-			inCodeBlock = !inCodeBlock
-			if inCodeBlock { // Capture language if starting a code block
-				language = token.Data
-				p.next() // consume TripleBacktick token to fetch language
-				continue
-			}
-		}
-
-		// Consume and collect text or non-code block token data
-		if token.Type == "Text" || (!inCodeBlock && token.Type != "TripleBacktick") {
-			content += token.Data + "\n" // Include the newline character
 		}
 		p.next() // consume token
+		if token.Type == "TripleBacktick" {
+			content += "```\n"
+		} else {
+			content += token.Data + "\n" // Ensure each text block ends with a newline
+		}
 	}
-	fileNode.Content = content
-	if language != "" {
-		fileNode.Language = language // Set language property to the AST node
-	}
-	return fileNode
+	return NewASTNode("Text", content)
 }
 
-// Parse runs the parser on the lexer's output and returns the root AST node.
+func (p *Parser) parseFile() *ASTNode {
+	fileStartToken := p.next() // consume FileStart
+	fileNode := NewASTNode("File", "")
+	fileNode.Name = fileStartToken.Data
+	codeBlockFound := false
+	
+	for {
+		token := p.peek()
+		if token.Type == "TripleBacktick" {
+			codeBlockFound = !codeBlockFound
+			if codeBlockFound {
+				// Consume the triple backtick and potentially a language tag
+				tripleBacktickToken := p.next()
+				// Check for language identifier only on the opening triple backtick
+				if fileNode.Language == "" && tripleBacktickToken.Data != "" {
+					fileNode.Language = tripleBacktickToken.Data
+				}
+			} else {
+				// Consume closing triple backtick
+				p.next()
+			}
+		} else if token.Type == "FileEnd" || token.Type == "EOF" {
+			p.next() // consume FileEnd or EOF
+			return fileNode // Finished file block
+		} else if token.Type == "Text" && codeBlockFound {
+			// Append text within triple backticks to File content
+			fileNode.Content += token.Data + "\n"
+			p.next()
+		} else {
+			p.next() // Skip unexpected tokens (outside code blocks)
+		}
+	}
+}
+
+// Parse runs the parser on the lexer's output and generates an AST.
 func Parse(lexer *Lexer) (*ASTNode, error) {
 	parser := NewParser(lexer)
 	root := parser.parseRoot()
-	return root, nil // Placeholder for now. Add error handling as required.
+	return root, nil
 }
 
-// ASTNode represents a node in the abstract syntax tree.
-type ASTNode struct {
-	Type      string
-	Content   string
-	Name      string    // To hold file name if this node represents a file
-	Language  string    // To hold language info if this node represents a block of code
-	children  []*ASTNode // Children nodes
-}
-
-// NewASTNode creates a new ASTNode given a type and content.
-func NewASTNode(nodeType, content string) *ASTNode {
-	return &ASTNode{
-		Type:    nodeType,
-		Content: content,
+// AsJSON returns the AST as a JSON string.
+func (n *ASTNode) AsJSON() string {
+	buf, err := json.MarshalIndent(n, "", "  ")
+	if err != nil {
+		return err.Error()
 	}
-}
-
-// addChild adds a child node to this AST node.
-func (n *ASTNode) addChild(child *ASTNode) {
-	n.children = append(n.children, child)
-}
-
-// Children returns the child nodes of this AST node.
-func (n *ASTNode) Children() []*ASTNode {
-	return n.children
+	return string(buf)
 }

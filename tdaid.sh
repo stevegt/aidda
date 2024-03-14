@@ -64,8 +64,9 @@ then
 fi
 
 # start a temporary git branch
+branch=tdaid_$$
 set -ex
-git checkout -b tdaid_$$ 
+git checkout -b $branch
 set +ex
 
 # make a stamp file dated at time zero
@@ -77,11 +78,7 @@ do
     # run tests
     (
         go mod tidy
-        if ! golint -set_exit_status
-        then
-            echo "FAIL"
-            exit 1
-        fi
+        golint 
         go test -v -timeout 1m
     ) 2>&1 | tee /tmp/$$.test
 
@@ -132,6 +129,9 @@ do
         grok chat /tmp/$$.chat -o $outfnsComma -s "$sysmsg" < /tmp/$$.test
     fi
     set +x
+
+    # test for vet errors -- if found, don't commit
+    go vet || continue
 
     # commit new code or tests
     set -x

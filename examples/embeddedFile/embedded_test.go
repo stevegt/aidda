@@ -353,9 +353,20 @@ func TestParseEmptyInput(t *testing.T) {
 	if err != nil {
 		t.Fatal("should not have error on empty input")
 	}
-	if ast == nil || len(ast.Children()) != 0 {
+	if ast == nil || len(ast.Children) != 0 {
 		t.Fatal("ast should be a non-nil root node with no children on empty input")
 	}
+}
+
+// TestParseShowJSON tests the parser's ability to generate a JSON representation of the AST.
+func TestParseASTString(t *testing.T) {
+	lex := NewLexer("foo\nFile: bar\n```\nbaz\n```\nEOF_bar\n")
+	ast, err := Parse(lex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	j := ast.AsJSON()
+	Tassert(t, j != "", "expected non-empty JSON string, got %q", j)
 }
 
 // TestParseTextOnly tests the parser's behavior when the input contains only text.
@@ -368,14 +379,17 @@ func TestParseTextOnly(t *testing.T) {
 	Tassert(t, ast != nil)
 
 	// Expected behavior is to return a root node with a single Text child.
-	children := ast.Children()
-	Tassert(t, len(children) == 1, "expected %d children nodes, got %#v", 1, children)
+	children := ast.Children
+	if len(children) != 1 {
+		Pl(ast.AsJSON())
+		t.Fatalf("expected 1 child node, got %d", len(children))
+	}
 	Tassert(t, children[0].Type == "Text", "expected child to be of type %q, got %q", "Text", children[0].Type)
-	Tassert(t, children[0].Content == "test line 1\ntest line 2", "expected child content to be %q, got %q", "test line 1\ntest line 2\n", children[0].Content)
+	Tassert(t, children[0].Content == "test line 1\ntest line 2\n", "expected child content to be %q, got %q", "test line 1\ntest line 2\n", children[0].Content)
 }
 
-// TestParseFileBlockOnly tests the parser's behavior when the input contains only file blocks.
-func TestParseFileBlockOnly(t *testing.T) {
+// TestParseFileBlock tests the parser's behavior when the input contains a single file block.
+func TestParseFileBlock(t *testing.T) {
 	lex := NewLexer("File: foo\n```\nbar\n```\nEOF_foo\n")
 	ast, err := Parse(lex)
 	if err != nil {
@@ -383,9 +397,14 @@ func TestParseFileBlockOnly(t *testing.T) {
 	}
 	Tassert(t, ast != nil)
 
-	// Expected behavior is to return a root node with a single File child.
-	children := ast.Children()
-	Tassert(t, len(children) == 1, "expected %d children nodes, got %#v", 1, children)
+	// Expected behavior is to return a root node with a single File
+	// child.  The File child should have the name "foo" and the content
+	// "bar\n".
+	children := ast.Children
+	if len(children) != 1 {
+		Pl(ast.AsJSON())
+		t.Fatalf("expected 1 child node, got %d", len(children))
+	}
 	Tassert(t, children[0].Type == "File", "expected child to be of type %q, got %q", "File", children[0].Type)
 	Tassert(t, children[0].Content == "bar\n", "expected child content to be %q, got %q", "bar\n", children[0].Content)
 }
@@ -400,8 +419,11 @@ func TestParseFileBlockWithLanguage(t *testing.T) {
 	Tassert(t, ast != nil)
 
 	// Expected behavior is to return a root node with a single File child.
-	children := ast.Children()
-	Tassert(t, len(children) == 1, "expected %d children nodes, got %#v", 1, children)
+	children := ast.Children
+	if len(children) != 1 {
+		Pl(ast.AsJSON())
+		t.Fatalf("expected 1 child node, got %d", len(children))
+	}
 	Tassert(t, children[0].Type == "File", "expected child to be of type %q, got %q", "File", children[0].Type)
 	Tassert(t, children[0].Content == "package main\n", "expected child content to be %q, got %q", "package main\n", children[0].Content)
 	Tassert(t, children[0].Language == "go", "expected child language to be %q, got %q", "go", children[0].Language)
@@ -417,8 +439,11 @@ func TestParseTripleBacktickOnly(t *testing.T) {
 	Tassert(t, ast != nil)
 
 	// Expected behavior is to return a root node with a single Text child.
-	children := ast.Children()
-	Tassert(t, len(children) == 1, "expected %d children nodes, got %#v", 1, children)
+	children := ast.Children
+	if len(children) != 1 {
+		Pl(ast.AsJSON())
+		t.Fatalf("expected 1 child node, got %d", len(children))
+	}
 	Tassert(t, children[0].Type == "Text", "expected child to be of type %q, got %q", "Text", children[0].Type)
 	Tassert(t, children[0].Content == "```\n```\n```\n", "expected child content to be %q, got %q", "```\n```\n```\n", children[0].Content)
 }
@@ -439,7 +464,7 @@ func TestParseIncorrectEOFMarker(t *testing.T) {
 	}
 	Tassert(t, ast != nil)
 
-	children := ast.Children()
+	children := ast.Children
 	Tassert(t, len(children) == 2, "expected %d children nodes, got %d", 2, len(children))
 	Tassert(t, children[0].Type() == "Text", "expected first child to be of type %q, got %q", "Text", children[0].Type())
 	Tassert(t, children[1].Type() == "Text", "expected second child to be of type %q, got %q", "Text", children[1].Type())
@@ -481,7 +506,7 @@ func XXXTestParseFunctional(t *testing.T) {
 	Tassert(t, ast.Type() == "Root", "ast type expected %q, got %q", "Root", ast.Type())
 
 	// ensure the root node has 3 children
-	children := ast.Children()
+	children := ast.Children
 	Tassert(t, len(children) == 3, "root node expected %d children, got %d", 3, len(children))
 
 	// ensure the first child is a Text type
@@ -525,7 +550,7 @@ func XXXTestParseEmbeddedFileBlocks(t *testing.T) {
 
 	// Expected behavior is to parse the input correctly, resulting in
 	// a root node with 1 File child.
-	children := ast.Children()
+	children := ast.Children
 	Tassert(t, len(children) == 1, "expected %d children nodes, got %d", 1, len(children))
 
 	// the child should be of type File
