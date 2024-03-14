@@ -71,9 +71,17 @@ then
     exit 1
 fi
 
+# get current branch name
+curbranch=$(git branch --show-current)
+
 # checkout dev branch
 set -ex
 git checkout $branch
+set +ex
+
+# merge from curbranch
+set -ex
+git merge --commit $curbranch
 set +ex
 
 # make a stamp file dated at time zero

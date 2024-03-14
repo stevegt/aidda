@@ -448,6 +448,25 @@ func TestParseTripleBacktickOnly(t *testing.T) {
 	Tassert(t, children[0].Content == "```\n```\n```\n", "expected child content to be %q, got %q", "```\n```\n```\n", children[0].Content)
 }
 
+// TestParseNoEOF tests the parser's behavior when the input contains a file block without an EOF marker.
+func TestParseNoEOF(t *testing.T) {
+	lex := NewLexer("File: foo\n```\nbar\n")
+	ast, err := Parse(lex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	Tassert(t, ast != nil)
+
+	// Expected behavior is to return a root node with a single Text child.
+	children := ast.Children
+	if len(children) != 1 {
+		Pl(ast.AsJSON())
+		t.Fatalf("expected 1 child node, got %d", len(children))
+	}
+	Tassert(t, children[0].Type == "Text", "expected child to be of type %q, got %q", "Text", children[0].Type)
+	Tassert(t, children[0].Content == "File: foo\n```\nbar\n", "expected child content to be %q, got %q", "File: foo\n```\nbar\n", children[0].Content)
+}
+
 /*
 func TestParseIncorrectEOFMarker(t *testing.T) {
 	// Expected behavior is to ignore the incorrect EOF marker,
