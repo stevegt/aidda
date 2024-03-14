@@ -7,6 +7,8 @@ usage="usage: tdaid.sh [-c | -t] [outputfile1] [outputfile2] ...
 
 cmdline="$0 $@"
 
+startTime=$(date +%s)
+
 # parse command line options
 unset mode
 while getopts "ct" opt
@@ -34,12 +36,15 @@ infnsComma=$(echo $infns | tr ' ' ',')
 outfnsComma=$(echo $outfns | tr ' ' ',')
 
 sysmsgcode="You are an expert Go programmer.  Write or fix code in
-[$outfns] to make the tests pass.  Do not mock the results.  Write
-production-quality code. Do not enclose backticks in string
-literals -- you can't escape backticks in Go, so you'll need to build
-string literals with embedded backticks by using string concatenation.
-If you see an error in the tests, say TESTERROR on a line by itself
-and suggest a fix."
+[$outfns] to make the tests pass.  Do not ask me to do things -- take
+care of it yourself.  I am giving you all relevant files.  Do not mock
+the results.  Write complete, production-quality code.  Do not write
+stubs.  Do not omit code -- provide the complete file each time.  Do
+not enclose backticks in string literals -- you can't escape backticks
+in Go, so you'll need to build string literals with embedded backticks
+by using string concatenation. Include comments and follow the Go
+documentation conventions.  If you see an error in the tests, say
+TESTERROR on a line by itself and suggest a fix."
 
 sysmsgtest="You are an expert Go programmer.  Appends tests to
 [$outfns] to make the code more robust.  Do not alter or insert before
@@ -63,14 +68,21 @@ set -ex
 git checkout -b tdaid_$$ 
 set +ex
 
+# make a stamp file dated at time zero
+touch -t 197001010000 /tmp/$$.stamp
+
 # loop until tests pass
-first=1
 while true
 do
     # run tests
     (
         go mod tidy
-        go test -v 
+        if ! golint -set_exit_status
+        then
+            echo "FAIL"
+            exit 1
+        fi
+        go test -v -timeout 1m
     ) 2>&1 | tee /tmp/$$.test
 
     case $mode in
@@ -78,7 +90,7 @@ do
                 # if tests pass, exit
                 if ! grep -q "FAIL" /tmp/$$.test
                 then
-                    grok chat /tmp/$$.chat -s "Recommend additional tests to improve coverage and robustness of code." < /tmp/$$.test
+                    grok chat /tmp/$$.chat -i $infnsComma -s "Recommend additional tests to improve coverage and robustness of code." < /tmp/$$.test
                     break
                 fi
                 ;;
@@ -91,27 +103,54 @@ do
                 ;;
     esac
 
+    # only include input files that have been updated since the last run
+    newfns=""
+    for infn in $infns
+    do
+        # skip output files
+        for outfn in $outfns
+        do
+            if [ "$infn" = "$outfn" ]
+            then
+                continue 2
+            fi
+        done
+        if [ "$infn" -nt /tmp/$$.stamp ]
+        then
+            newfns="$newfns $infn"
+        fi
+    done
+    newfnsComma=$(echo $newfns | tr ' ' ',')
+    touch /tmp/$$.stamp
+
     # get new code or tests from grokker
-    if [ $first -eq 1 ]
+    set -x
+    if [ "$newfnsComma" != "" ]
     then
-        # include input files in the first run
         grok chat /tmp/$$.chat -i $infnsComma -o $outfnsComma -s "$sysmsg" < /tmp/$$.test
-        first=0
     else
-        # do not include input files in subsequent runs, since they are
-        # already included in the chat file
         grok chat /tmp/$$.chat -o $outfnsComma -s "$sysmsg" < /tmp/$$.test
     fi
+    set +x
 
     # commit new code or tests
-    set -ex
+    set -x
     git add $infns $outfns 
     git commit -m "$cmdline" 
-    set +ex
+    set +x
 
     # look for TESTERROR or CODEERROR
-    if egrep "^(TESTERROR|CODEERROR)$" /tmp/$$.chat
+    errcount=$(egrep "^(TESTERROR|CODEERROR)$" /tmp/$$.chat | wc -l)
+    if [ $errcount -gt 3 ]
     then
+        break
+    fi
+
+    # limit runtime to 10 minutes
+    endTime=$(date +%s)
+    if [ $(($endTime - $startTime)) -gt 600 ]
+    then
+        echo "error: time limit exceeded"
         break
     fi
 

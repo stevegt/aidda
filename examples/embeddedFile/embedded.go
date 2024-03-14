@@ -1,110 +1,108 @@
+// Package embedded provides a simple Lexer for tokenizing embedded content
+// according to predefined rules.
 package embedded
 
 import (
-	"regexp"
+	"strings"
 )
 
-// Node represents a generic node in the tree.
-type Node interface {
-	Type() string
-	Content() string
+// Lexer is responsible for tokenizing an input string based on specific
+// delimiters and markers, facilitating the parsing of embedded content.
+type Lexer struct {
+	input       string // The input string to tokenize
+	pos         int    // Current position within the input
+	checkpoints []int  // Stack for managing backtracking points
 }
 
-// Text represents a text node.
-type Text struct {
-	Data string
+// Token represents a lexical token with an associated type and data.
+type Token struct {
+	Type string // The type of the token (e.g., "Text", "FileStart", "FileEnd", "TripleBacktick")
+	Data string // The data contained within the token
 }
 
-func (t *Text) Type() string {
-	return "Text"
+// NewLexer creates a new Lexer for tokenizing the given input string.
+func NewLexer(input string) *Lexer {
+	return &Lexer{input: input}
 }
 
-func (t *Text) Content() string {
-	return t.Data
+// Checkpoint marks the current position in the input for potential backtracking.
+func (l *Lexer) Checkpoint() {
+	l.checkpoints = append(l.checkpoints, l.pos)
 }
 
-// File represents a file node.
-type File struct {
-	Name string
-	Data string
+// Rollback reverts the current position to the last checkpoint.
+func (l *Lexer) Rollback() {
+	if len(l.checkpoints) > 0 {
+		l.pos = l.checkpoints[len(l.checkpoints)-1]
+		l.checkpoints = l.checkpoints[:len(l.checkpoints)-1]
+	}
 }
 
-func (f *File) Type() string {
-	return "File"
-}
-
-func (f *File) Content() string {
-	return f.Data
-}
-
-// Root represents the root node of the tree.
-type Root struct {
-	Data     string
-	children []Node
-}
-
-func (r *Root) Type() string {
-	return "Root"
-}
-
-func (r *Root) Content() string {
-	return r.Data
-}
-
-func (r *Root) Children() []Node {
-	return r.children
-}
-
-// Parse function to parse the input byte slice into a tree structure.
-func Parse(input []byte) (*Root, error) {
-	if len(input) == 0 {
-		// Allow empty input to return a new Root with no children.
-		return &Root{Data: "root"}, nil
+// Next retrieves the next token, advancing the lexer's position.
+func (l *Lexer) Next() Token {
+	if l.pos >= len(l.input) {
+		return Token{Type: "EOF"}
 	}
 
-	var children []Node
+	// Enhanced check for newline to emitText method
+	// This ensures newline handling is considered in different contexts, including empty lines.
+	if l.input[l.pos] == '\n' { // Newline identified; emit as a separate text token
+		l.pos++ // Move past the newline character
+		return Token{Type: "Text", Data: ""}
+	}
 
-	backticks := "```"
-	fileBlockRegexString := `(?ms)^File: ([^\n]+)\n` + backticks + `(.*?)` + backticks + `\nEOF_([^\n]+)\s*`
-	fileBlockRegex := regexp.MustCompile(fileBlockRegexString)
+	if strings.HasPrefix(l.input[l.pos:], "File: ") {
+		return l.emitWithSkip("FileStart", "File: ")
+	} else if strings.HasPrefix(l.input[l.pos:], "EOF_") {
+		return l.emitWithSkip("FileEnd", "EOF_")
+	} else if strings.HasPrefix(l.input[l.pos:], "```") {
+		return l.emitWithSkip("TripleBacktick", "```")
+	}
 
-	matches := fileBlockRegex.FindAllSubmatchIndex(input, -1)
-	lastIndex := 0
-	for _, match := range matches {
-		preMatchText := string(input[lastIndex:match[0]])
-		if len(preMatchText) > 0 {
-			children = append(children, &Text{Data: preMatchText})
+	return l.emitText()
+}
+
+// emitWithSkip generates a token with a specified type by skipping over
+// a predefined marker and collecting the subsequent text.
+func (l *Lexer) emitWithSkip(tokenType, startMarker string) Token {
+	startPos := l.pos + len(startMarker)
+	endPos := strings.Index(l.input[startPos:], "\n")
+	if endPos == -1 {
+		endPos = len(l.input)
+	} else {
+		endPos += startPos
+	}
+	data := strings.TrimSpace(l.input[startPos:endPos])
+	l.pos = endPos + 1 // Move past the newline
+	return Token{Type: tokenType, Data: data}
+}
+
+// emitText gathers and returns a text token ending at a newline or marker.
+func (l *Lexer) emitText() Token {
+	start := l.pos
+	for l.pos < len(l.input) && l.input[l.pos] != '\n' && !strings.HasPrefix(l.input[l.pos:], "File: ") && !strings.HasPrefix(l.input[l.pos:], "EOF_") && !strings.HasPrefix(l.input[l.pos:], "```") {
+		l.pos++
+	}
+	data := strings.TrimSpace(l.input[start:l.pos])
+	if l.pos < len(l.input) && l.input[l.pos] == '\n' {
+		l.pos++ // Move past the newline, if present
+	}
+	if data == "" { // Avoid emitting empty text tokens except for explicit newlines
+		return l.Next() // Recur until a non-empty or meaningful token is found
+	}
+	return Token{Type: "Text", Data: data}
+}
+
+// Run processes the entire input and returns all identified tokens.
+func (l *Lexer) Run() []Token {
+	var tokens []Token
+	for {
+		token := l.Next()
+		if token.Type == "EOF" {
+			tokens = append(tokens, token) // Include EOF in the result
+			break
 		}
-
-		fileName := string(input[match[2]:match[3]])
-		fileContent := string(input[match[4]:match[5]])
-		eofName := string(input[match[6]:match[7]])
-
-		if fileName != eofName {
-			lastIndex = match[0] // Go back to start of the unmatched block
-			continue            // EOF marker does not match file name; skip this block.
-		}
-
-		children = append(children, &File{Name: fileName, Data: fileContent})
-
-		// Correctly update lastIndex to just after the EOF marker.
-		if match[7]+1 < len(input) && input[match[7]] == '\n' {
-			lastIndex = match[7] + 1
-		} else {
-			lastIndex = match[7]
-		}
+		tokens = append(tokens, token)
 	}
-
-	// Append any trailing text after the last file block as a Text node, including text before unmatched block.
-	trailingText := string(input[lastIndex:])
-	if len(trailingText) > 0 {
-		children = append(children, &Text{Data: trailingText})
-	}
-
-	root := &Root{
-		Data:     "root",
-		children: children,
-	}
-
-	return root, nil
+	return tokens
 }
