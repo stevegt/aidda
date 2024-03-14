@@ -407,6 +407,56 @@ func TestParseFileBlockWithLanguage(t *testing.T) {
 	Tassert(t, children[0].Language == "go", "expected child language to be %q, got %q", "go", children[0].Language)
 }
 
+// TestParseTripleBacktickOnly tests the parser's behavior when the input contains only triple backticks.
+func TestParseTripleBacktickOnly(t *testing.T) {
+	lex := NewLexer("```\n```\n```\n")
+	ast, err := Parse(lex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	Tassert(t, ast != nil)
+
+	// Expected behavior is to return a root node with a single Text child.
+	children := ast.Children()
+	Tassert(t, len(children) == 1, "expected %d children nodes, got %#v", 1, children)
+	Tassert(t, children[0].Type == "Text", "expected child to be of type %q, got %q", "Text", children[0].Type)
+	Tassert(t, children[0].Content == "```\n```\n```\n", "expected child content to be %q, got %q", "```\n```\n```\n", children[0].Content)
+}
+
+/*
+func TestParseIncorrectEOFMarker(t *testing.T) {
+	// Expected behavior is to ignore the incorrect EOF marker,
+	// including it as if it were part of the file content.
+
+	buf, err := ioutil.ReadFile("input_incorrect_eof.md")
+	Ck(err)
+	Pf("buf: %q\n", buf)
+
+	lex := NewLexer(string(buf))
+	ast, err := Parse(lex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	Tassert(t, ast != nil)
+
+	children := ast.Children()
+	Tassert(t, len(children) == 2, "expected %d children nodes, got %d", 2, len(children))
+	Tassert(t, children[0].Type() == "Text", "expected first child to be of type %q, got %q", "Text", children[0].Type())
+	Tassert(t, children[1].Type() == "Text", "expected second child to be of type %q, got %q", "Text", children[1].Type())
+
+	// get the input file lines
+	lines := bytesToLines(buf)
+
+	// the first child should contain the first line of the input file
+	Tassert(t, children[0].Content() == lines[0], "expected first child content to be %q, got %q", lines[0], children[0].Content())
+
+	// the second child should contain the rest of the input file
+	restOfInput := strings.Join(lines[1:], "")
+	Tassert(t, children[1].Content() == restOfInput, "expected second child content to be %q, got %q", restOfInput, children[1].Content())
+
+}
+*/
+
 /*
 func XXXTestParseFunctional(t *testing.T) {
 	// Functional test reading input from file
@@ -458,39 +508,6 @@ func XXXTestParseFunctional(t *testing.T) {
 	lastLine := lines[len(lines)-1]
 	thirdContent := children[2].Content()
 	Tassert(t, thirdContent == lastLine, "third child content: expected %q, got %q", lastLine, thirdContent)
-}
-
-func XXXTestParseIncorrectEOFMarker(t *testing.T) {
-	buf, err := ioutil.ReadFile("input_incorrect_eof.md")
-	Ck(err)
-	Pf("buf: %q\n", buf)
-
-	lex := NewLexer(string(buf))
-	ast, err := Parse(lex)
-	if err != nil {
-		t.Fatal(err)
-	}
-	Tassert(t, ast != nil)
-
-	// Expected behavior is to ignore the block with incorrect EOF marker,
-	// resulting in two children: one Text node before the incorrect file block and
-	// one Text that includes the incorrect EOF marker and trailing text.
-
-	children := ast.Children()
-	Tassert(t, len(children) == 2, "expected %d children nodes, got %d", 2, len(children))
-	Tassert(t, children[0].Type() == "Text", "expected first child to be of type %q, got %q", "Text", children[0].Type())
-	Tassert(t, children[1].Type() == "Text", "expected second child to be of type %q, got %q", "Text", children[1].Type())
-
-	// get the input file lines
-	lines := bytesToLines(buf)
-
-	// the first child should contain the first line of the input file
-	Tassert(t, children[0].Content() == lines[0], "expected first child content to be %q, got %q", lines[0], children[0].Content())
-
-	// the second child should contain the rest of the input file
-	restOfInput := strings.Join(lines[1:], "")
-	Tassert(t, children[1].Content() == restOfInput, "expected second child content to be %q, got %q", restOfInput, children[1].Content())
-
 }
 
 // TestParseEmbeddedFileBlocks tests the parser's ability to handle file blocks embedded within other file blocks.
