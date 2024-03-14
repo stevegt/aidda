@@ -64,29 +64,35 @@ func (p *Parser) parseRoot() *ASTNode {
 			fileNode := p.parseFile()
 			root.Children = append(root.Children, fileNode)
 		default:
-			textNode := p.collectText() // Collecting text outside of File blocks in a separate method
-			root.Children = append(root.Children, textNode)
+			textNode := p.parseText() // Collecting text outside of File blocks in a separate method
+			if textNode != nil {
+				root.Children = append(root.Children, textNode)
+			}
 		}
 	}
 }
 
-// collectText gathers consecutive non-file tokens.
-func (p *Parser) collectText() *ASTNode {
-	content := ""
+// parseText gathers consecutive text tokens until another token type is encountered.
+func (p *Parser) parseText() *ASTNode {
+	content := strings.Builder{}
 	for {
 		token := p.peek()
-		if token.Type == "EOF" || token.Type == "FileStart" {
+		if token.Type != "Text" && token.Type != "TripleBacktick" {
 			break
 		}
-		content += token.Data
+		p.next() // Consume the token.
 		if token.Type == "TripleBacktick" {
-			content += "\n" // Add newline for triple backticks
+			content.WriteString("```\n")
+		} else {
+			content.WriteString(token.Data + "\n")
 		}
-		p.next()
 	}
-	// Removing the trailing newlines only for content that ends with triple backticks
-	content = strings.TrimRight(content, "\n")
-	return NewASTNode("Text", content)
+	if content.Len() > 0 {
+		// See if there is a need to remove a trailing newline.
+		finalContent := strings.TrimSuffix(content.String(), "\n")
+		return NewASTNode("Text", finalContent)
+	}
+	return nil
 }
 
 // parseFile extracts file content, correctly handling the EOF and language.
@@ -94,8 +100,7 @@ func (p *Parser) parseFile() *ASTNode {
 	startToken := p.next() // consume FileStart
 	fileNode := NewASTNode("File", "")
 	fileNode.Name = startToken.Data
-	content := ""
-	var languageLine bool // flag to identify language specification line
+	content := strings.Builder{}
 	for {
 		token := p.next()
 		if token.Type == "FileEnd" && token.Data == startToken.Data {
@@ -103,16 +108,12 @@ func (p *Parser) parseFile() *ASTNode {
 		} else if token.Type == "EOF" {
 			break // Handle case without EOF marker
 		} else if token.Type == "TripleBacktick" {
-			if !languageLine { // Skip language line if already captured
-				fileNode.Language = token.Data
-				languageLine = true
-				continue
-			}
+			content.WriteString("```\n")
+		} else {
+			content.WriteString(token.Data + "\n")
 		}
-		// Accumulate file content
-		content += token.Data + "\n"
 	}
-	fileNode.Content = strings.TrimSuffix(content, "\n") // Remove trailing newline
+	fileNode.Content = strings.TrimSuffix(content.String(), "\n") // Remove trailing newline
 	return fileNode
 }
 
@@ -131,3 +132,4 @@ func (n *ASTNode) AsJSON() string {
 	}
 	return string(buf)
 }
+
