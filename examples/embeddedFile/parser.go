@@ -2,6 +2,7 @@ package embedded
 
 import (
 	"encoding/json"
+	"strings"
 )
 
 // Parser prepares tokens from a lexer into an Abstract Syntax Tree.
@@ -26,6 +27,7 @@ type ASTNode struct {
 }
 
 // NewASTNode creates a new AST node given its type and content.
+// This function is essential for creating new instances of ASTNode.
 func NewASTNode(nodeType, content string) *ASTNode {
 	return &ASTNode{Type: nodeType, Content: content}
 }
@@ -58,50 +60,59 @@ func (p *Parser) parseRoot() *ASTNode {
 		switch token.Type {
 		case "EOF":
 			return root
-		case "Text":
-			textNode := p.parseText()
-			root.Children = append(root.Children, textNode)
 		case "FileStart":
 			fileNode := p.parseFile()
 			root.Children = append(root.Children, fileNode)
 		default:
-			p.next() // Consume unknown tokens to avoid infinite loop
+			textNode := p.collectText() // Collecting text outside of File blocks in a separate method
+			root.Children = append(root.Children, textNode)
 		}
 	}
 }
 
-// parseText collects consecutive Text tokens into a single Text node.
-func (p *Parser) parseText() *ASTNode {
+// collectText gathers consecutive non-file tokens.
+func (p *Parser) collectText() *ASTNode {
 	content := ""
 	for {
 		token := p.peek()
-		if token.Type != "Text" {
+		if token.Type == "EOF" || token.Type == "FileStart" {
 			break
 		}
-		content += token.Data + "\n" // Append the text data
-		p.next()                      // Consume the token
+		content += token.Data
+		if token.Type == "TripleBacktick" {
+			content += "\n" // Add newline for triple backticks
+		}
+		p.next()
 	}
+	// Removing the trailing newlines only for content that ends with triple backticks
+	content = strings.TrimRight(content, "\n")
 	return NewASTNode("Text", content)
 }
 
-// parseFile extracts file content from the input, delimited by FileStart and EOF markers.
+// parseFile extracts file content, correctly handling the EOF and language.
 func (p *Parser) parseFile() *ASTNode {
 	startToken := p.next() // consume FileStart
 	fileNode := NewASTNode("File", "")
 	fileNode.Name = startToken.Data
 	content := ""
+	var languageLine bool // flag to identify language specification line
 	for {
 		token := p.next()
 		if token.Type == "FileEnd" && token.Data == startToken.Data {
 			break // Found matching EOF marker, end file block
 		} else if token.Type == "EOF" {
-			// If EOF token is encountered before closing FileEnd, treat the rest as Text
-			fileNode = NewASTNode("Text", "File: "+startToken.Data+"\n"+content)
-			break
+			break // Handle case without EOF marker
+		} else if token.Type == "TripleBacktick" {
+			if !languageLine { // Skip language line if already captured
+				fileNode.Language = token.Data
+				languageLine = true
+				continue
+			}
 		}
+		// Accumulate file content
 		content += token.Data + "\n"
 	}
-	fileNode.Content = content
+	fileNode.Content = strings.TrimSuffix(content, "\n") // Remove trailing newline
 	return fileNode
 }
 
@@ -120,4 +131,3 @@ func (n *ASTNode) AsJSON() string {
 	}
 	return string(buf)
 }
-
