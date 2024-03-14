@@ -1,6 +1,6 @@
 #!/bin/bash
 
-usage="usage: tdaid.sh [-c | -t] {branch} [outputfile1] [outputfile2] ...
+usage="usage: tdaid.sh {branch} [-c | -t] [outputfile1] [outputfile2] ...
     -c:  write code
     -t:  write tests
 "
