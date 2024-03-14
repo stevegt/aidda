@@ -1,6 +1,6 @@
 #!/bin/bash
 
-usage="usage: tdaid.sh [-c | -t] [outputfile1] [outputfile2] ...
+usage="usage: tdaid.sh [-c | -t] {branch} [outputfile1] [outputfile2] ...
     -c:  write code
     -t:  write tests
 "
@@ -8,6 +8,14 @@ usage="usage: tdaid.sh [-c | -t] [outputfile1] [outputfile2] ...
 cmdline="$0 $@"
 
 startTime=$(date +%s)
+
+branch=$1
+shift
+if [ -z "$branch" ]
+then
+    echo "$usage"
+    exit 1
+fi
 
 # parse command line options
 unset mode
@@ -63,10 +71,9 @@ then
     exit 1
 fi
 
-# start a temporary git branch
-branch=tdaid_$$
+# checkout dev branch
 set -ex
-git checkout -b $branch
+git checkout $branch
 set +ex
 
 # make a stamp file dated at time zero
@@ -157,8 +164,7 @@ do
     sleep 1
 done
 
-echo "# to squash and merge the temporary branch into master or main and delete the temporary branch, run the following commands:"
+echo "# to squash and merge the dev branch into main or master, run the following commands:"
 echo "git checkout main || git checkout master"
-echo "git merge --squash tdaid_$$"
+echo "git merge --squash $branch"
 echo "git commit"
-echo "git branch -d tdaid_$$"
