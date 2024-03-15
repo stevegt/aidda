@@ -7,9 +7,8 @@ import (
 // Lexer is responsible for tokenizing an input string based on specific
 // delimiters and markers, facilitating the parsing of embedded content.
 type Lexer struct {
-	input       string // The input string to tokenize
-	pos         int    // Current position within the input
-	checkpoints []int  // Stack for managing backtracking points
+	input string // The input string to tokenize
+	pos   int    // Current position within the input
 }
 
 // Token represents a lexical token with an associated type and data.
@@ -23,17 +22,14 @@ func NewLexer(input string) *Lexer {
 	return &Lexer{input: input}
 }
 
-// Checkpoint marks the current position in the input for potential backtracking.
-func (l *Lexer) Checkpoint() {
-	l.checkpoints = append(l.checkpoints, l.pos)
+// Checkpoint returns the current position in the input for potential backtracking.
+func (l *Lexer) Checkpoint() int {
+	return l.pos
 }
 
-// Rollback reverts the current position to the last checkpoint.
-func (l *Lexer) Rollback() {
-	if len(l.checkpoints) > 0 {
-		l.pos = l.checkpoints[len(l.checkpoints)-1]
-		l.checkpoints = l.checkpoints[:len(l.checkpoints)-1]
-	}
+// Rollback reverts the current position to the given position.
+func (l *Lexer) Rollback(cp int) {
+	l.pos = cp
 }
 
 // Next retrieves the next token, advancing the lexer's position.
