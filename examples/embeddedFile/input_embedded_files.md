@@ -1,6 +1,6 @@
 File: outer_file.md
 ```
-The `input_embedded_files.md` file contains the following:
+Some content
 File: inner_file.md
 ```
 inner_file.md content

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"regexp"
+	"runtime"
 	"testing"
 
 	. "github.com/stevegt/goadapt"
@@ -37,6 +38,9 @@ func lt(t *testing.T, lexer *Lexer, typ, src, payload string) {
 // children count are equal to the given values.  If all assertions
 // pass, pt returns the child nodes of the given node.
 func pt(t *testing.T, node *ASTNode, typ, content string, childrenCount int) (children []*ASTNode) {
+	// get caller line number
+	_, file, line, _ := runtime.Caller(1)
+	caller := fmt.Sprintf("%s:%d", file, line)
 	pass := true
 	msg := ""
 	if node == nil {
@@ -60,7 +64,9 @@ func pt(t *testing.T, node *ASTNode, typ, content string, childrenCount int) (ch
 		if node != nil {
 			msg += node.AsJSON()
 		}
-		t.Fatal(msg)
+		// print message and fail test
+		t.Logf("%s: %s", caller, msg)
+		t.FailNow()
 	}
 	return node.Children
 }
@@ -301,14 +307,11 @@ func TestParseEmptyInput(t *testing.T) {
 // TestParseShowJSON tests the parser's ability to generate a JSON representation of the AST.
 func TestParseASTString(t *testing.T) {
 	lex := NewLexer("foo\nFile: bar\n```\nbaz\n```\nEOF_bar\n")
-	Pl("lexing done")
 	ast, err := Parse(lex)
 	if err != nil {
 		t.Fatal(err)
 	}
-	Pl("parsing done")
 	j := ast.AsJSON()
-	Pl("AsJSON done")
 	Tassert(t, j != "", "expected non-empty JSON string, got %q", j)
 }
 
@@ -452,88 +455,69 @@ func TestParseIncorrectEOFMarker(t *testing.T) {
 	pt(t, rootChildren[3], "EOF", "", 0)
 }
 
-/*
-func XXXTestParseFunctional(t *testing.T) {
+func TestParseFunctional(t *testing.T) {
 	// Functional test reading input from file
 	fn := "input.md" // Assuming the input file is in the test directory with the name 'input.md'.
 	buf, err := ioutil.ReadFile(fn)
 	if err != nil {
 		t.Fatal(err)
 	}
-	Pf("buf: %q\n", buf)
-
+	t.Logf("buf: %q\n", buf)
 	lex := NewLexer(string(buf))
 	ast, err := Parse(lex)
-	if err != nil {
-		t.Fatal(err)
-	}
-	Tassert(t, ast != nil)
+	Tassert(t, err == nil, "expected no error, got %v", err)
+	t.Log(ast.AsJSON())
 
 	// split buf into lines
 	lines := bytesToLines(buf)
 
-	// ensure the root node is a Root type
-	Tassert(t, ast.Type() == "Root", "ast type expected %q, got %q", "Root", ast.Type())
+	// test line before file
+	//
+	// File: foo
+	// ```
+	// bar
+	// ```
+	// EOF_foo
+	// test line after eof
 
-	// ensure the root node has 3 children
-	children := ast.Children
-	Tassert(t, len(children) == 3, "root node expected %d children, got %d", 3, len(children))
+	rootChildren := pt(t, ast, "Root", "", 4)
+	pt(t, rootChildren[0], "Text", lines[0]+lines[1], 0)
+	fileChildren := pt(t, rootChildren[1], "File", "", 1)
+	pt(t, fileChildren[0], "Text", lines[4], 0)
+	pt(t, rootChildren[2], "Text", lines[7], 0)
+	pt(t, rootChildren[3], "EOF", "", 0)
 
-	// ensure the first child is a Text type
-	Tassert(t, children[0].Type() == "Text", "first child expected %q, got %q", "Text", children[0].Type())
-
-	// ensure the second child is a File type
-	Tassert(t, children[1].Type() == "File", "second child expected %q, got %q", "File", children[1].Type())
-
-	// ensure the third child is a Text type
-	Tassert(t, children[2].Type() == "Text", "third child expected %q, got %q", "Text", children[2].Type())
-
-	// ensure the first child content matches the first 2 lines of the input file
-	firstTwoLines := lines[0] + lines[1]
-	firstContent := children[0].Content()
-	Tassert(t, firstContent == firstTwoLines, "first child content: expected %q, got %q", firstTwoLines, firstContent)
-
-	// ensure the second child content matches lines 4-6 of the input file
-	secondContent := children[1].Content()
-	expectedContent := strings.Join(lines[3:6], "")
-	Pf("expectedContent: %q\n", expectedContent)
-	Tassert(t, secondContent == expectedContent, "second child content: expected %q, got %q", expectedContent, secondContent)
-
-	// ensure the third child content matches the last line of the input file
-	lastLine := lines[len(lines)-1]
-	thirdContent := children[2].Content()
-	Tassert(t, thirdContent == lastLine, "third child content: expected %q, got %q", lastLine, thirdContent)
 }
 
 // TestParseEmbeddedFileBlocks tests the parser's ability to handle file blocks embedded within other file blocks.
-func XXXTestParseEmbeddedFileBlocks(t *testing.T) {
+func TestParseEmbeddedFileBlocks(t *testing.T) {
 	buf, err := ioutil.ReadFile("input_embedded_files.md")
 	Ck(err)
-	Pf("buf: %q\n", buf)
-
+	t.Logf("buf: %q\n", buf)
 	lex := NewLexer(string(buf))
 	ast, err := Parse(lex)
-	if err != nil {
-		t.Fatal(err)
-	}
-	Tassert(t, ast != nil)
+	Tassert(t, err == nil, "expected no error, got %v", err)
+
+	// File: outer_file.md
+	// ```
+	// Some content
+	// File: inner_file.md
+	// ```
+	// inner_file.md content
+	// ```
+	// EOF_inner_file.md
+	// ```
+	// EOF_outer_file.md
 
 	// Expected behavior is to parse the input correctly, resulting in
-	// a root node with 1 File child.
-	children := ast.Children
-	Tassert(t, len(children) == 1, "expected %d children nodes, got %d", 1, len(children))
-
-	// the child should be of type File
-	Tassert(t, children[0].Type() == "File", "expected child to be of type %q, got %q", "File", children[0].Type())
-
-	// the child should contain the entire input file without the
-	// first and last lines, which are the File and EOF markers for the
-	// outer file block
-	lines := bytesToLines(buf)
-	expectedContent := strings.Join(lines[1:len(lines)-1], "")
-	Tassert(t, children[0].Content() == expectedContent, "expected child content to be %q, got %q", expectedContent, children[0].Content())
+	// a root node with 1 File child and an EOF child.  The File child
+	// should have the name "foo" and a single Text child with the
+	// content "Some content\nFile: inner_file.md\n```\ninner_file.md content\n```\nEOF_inner_file.md\n".
+	rootChildren := pt(t, ast, "Root", "", 2)
+	fileChildren := pt(t, rootChildren[0], "File", "", 1)
+	pt(t, fileChildren[0], "Text", "Some content\nFile: inner_file.md\n```\ninner_file.md content\n```\nEOF_inner_file.md\n", 0)
+	pt(t, rootChildren[1], "EOF", "", 0)
 }
-*/
 
 /*
 1. **TestParseMultipleFiles**: Verify the parser correctly handles input containing multiple file blocks.
