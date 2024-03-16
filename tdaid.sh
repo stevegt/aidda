@@ -151,7 +151,8 @@ do
     # commit new code or tests
     set -x
     git add $infns $outfns 
-    git commit -m "$cmdline" 
+    grok commit > /tmp/$$.commit
+    git commit -F /tmp/$$.commit
     set +x
 
     # look for TESTERROR or CODEERROR
@@ -161,9 +162,9 @@ do
         break
     fi
 
-    # limit runtime to 10 minutes
+    # limit runtime to 20 minutes
     endTime=$(date +%s)
-    if [ $(($endTime - $startTime)) -gt 600 ]
+    if [ $(($endTime - $startTime)) -gt 1200 ]
     then
         echo "error: time limit exceeded"
         break
