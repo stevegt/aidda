@@ -112,13 +112,14 @@ func (p *Parser) parseFile(args ...any) *ASTNode {
 	if codeNode == nil {
 		return nil
 	}
-	fileNode.Children = append(fileNode.Children, codeNode)
+	fileNode.Children = append(fileNode.Children, codeNode.Children...)
 	return fileNode
 }
 
 func (p *Parser) parseCodeBlock(fileName string) *ASTNode {
 	lex := p.lexer
 	codeNode := NewASTNode("CodeBlock", "")
+	// cpFirstBacktick := lex.Checkpoint()
 	openTickNode := p.parseTripleBacktick()
 	if openTickNode == nil {
 		return nil
@@ -132,26 +133,25 @@ func (p *Parser) parseCodeBlock(fileName string) *ASTNode {
 			// end of input -- malformed code block
 			return nil
 		}
-		cpBacktick := lex.Checkpoint()
-		backtickNode := p.Try(p.parseTripleBacktick)
-		fileEndNode := p.Try(p.parseFileEnd, fileName)
-		if backtickNode != nil {
-			// Triple backtick found -- end of code block
-			if fileEndNode != nil {
-				// properly-formed end of file block -- discard the FileEnd token
-				// and close the code block
+		if fileName == "" {
+			// no file name was given, so we're just looking for the end of the code block
+			backtickNode := p.Try(p.parseTripleBacktick)
+			if backtickNode != nil {
+				// end of code block
 				break
 			}
-			// backtick with no following file end
-			if fileName == "" {
-				// no file name was given, so we're really just looking for the end of the code block
-				// and we've found it
+		} else {
+			// we're looking for code block end followed by a file end
+			cpBacktick := lex.Checkpoint()
+			backtickNode := p.Try(p.parseTripleBacktick)
+			fileEndNode := p.Try(p.parseFileEnd, fileName)
+			if backtickNode != nil && fileEndNode != nil {
+				// properly-formed end of file block
 				break
 			}
-			// we're looking for a file end, but we found backticks
-			// instead -- rollback and treat the backticks as text
 			lex.Rollback(cpBacktick)
 		}
+		// anything else is just text
 		textNode := p.parseText()
 		codeNode.Children = append(codeNode.Children, textNode)
 	}

@@ -1,6 +1,7 @@
 package embedded
 
 import (
+	"fmt"
 	"io/ioutil"
 	"regexp"
 	"testing"
@@ -8,27 +9,72 @@ import (
 	. "github.com/stevegt/goadapt"
 )
 
+// lt (lexer test) asserts that the next token's type and data are
+// equal to the given values.
+func lt(t *testing.T, lexer *Lexer, typ, data string) {
+	token := lexer.Next()
+	pass := true
+	msg := ""
+	if token.Type != typ {
+		msg += fmt.Sprintf("expected token type %q, got %q\n", typ, token.Type)
+		pass = false
+	}
+	if token.Data != data {
+		msg += fmt.Sprintf("expected token data %q, got %q\n", data, token.Data)
+		pass = false
+	}
+	if !pass {
+		msg += Spf("token: %#v", token)
+		t.Fatal(msg)
+	}
+}
+
+// pt (parser test) asserts that the given node's type, content, and
+// children count are equal to the given values.  If all assertions
+// pass, pt returns the child nodes of the given node.
+func pt(t *testing.T, node *ASTNode, typ, content string, childrenCount int) (children []*ASTNode) {
+	pass := true
+	msg := ""
+	if node == nil {
+		msg += "expected non-nil node\n"
+		pass = false
+	} else {
+		if node.Type != typ {
+			msg += fmt.Sprintf("expected node type %q, got %q\n", typ, node.Type)
+			pass = false
+		}
+		if node.Content != content {
+			msg += fmt.Sprintf("expected node content %q, got %q\n", content, node.Content)
+			pass = false
+		}
+		if len(node.Children) != childrenCount {
+			msg += fmt.Sprintf("expected %d children, got %d\n", childrenCount, len(node.Children))
+			pass = false
+		}
+	}
+	if !pass {
+		if node != nil {
+			msg += node.AsJSON()
+		}
+		t.Fatal(msg)
+	}
+	return node.Children
+}
+
 func TestLexerEmptyInput(t *testing.T) {
-	// The lexer should not return any tokens when the input is empty.
+	// The lexer should return an EOF token when the input is empty.
 	lexer := NewLexer("")
-	tokens := lexer.Run()
-	Tassert(t, len(tokens) == 1, "expected 1 token on empty input, got %#v", tokens)
-	Tassert(t, tokens[0].Type == "EOF", "expected EOF token, got %#v", tokens[0])
+	lt(t, lexer, "EOF", "")
 }
 
 func TestLexerNewlinesOnly(t *testing.T) {
 	// The lexer should return a single token for each line in the
 	// input, including empty lines.
 	lexer := NewLexer("\n\n\n")
-	tokens := lexer.Run()
-	Tassert(t, len(tokens) == 4, "expected 4 tokens, got %#v", tokens)
-	for i, token := range tokens {
-		if i == 3 {
-			Tassert(t, token.Type == "EOF", "expected EOF token, got %#v", token)
-		} else {
-			Tassert(t, token.Type == "Text" && token.Data == "", "expected empty Text token, got %#v", token)
-		}
-	}
+	lt(t, lexer, "Text", "\n")
+	lt(t, lexer, "Text", "\n")
+	lt(t, lexer, "Text", "\n")
+	lt(t, lexer, "EOF", "")
 }
 
 func TestLexerWhitespaceOnly(t *testing.T) {
@@ -353,9 +399,11 @@ func TestParseEmptyInput(t *testing.T) {
 	if err != nil {
 		t.Fatal("should not have error on empty input")
 	}
-	if ast == nil || len(ast.Children) != 0 {
-		t.Fatal("ast should be a non-nil root node with no children on empty input")
+	if ast == nil || len(ast.Children) != 1 {
+		fmt.Println(ast.AsJSON())
+		t.Fatal("ast should be a non-nil root node with 1 EOF child")
 	}
+	Tassert(t, ast.Children[0].Type == "EOF", "expected EOF child, got %q", ast.Children[0].Type)
 }
 
 // TestParseShowJSON tests the parser's ability to generate a JSON representation of the AST.
@@ -381,14 +429,48 @@ func TestParseTextOnly(t *testing.T) {
 	}
 	Tassert(t, ast != nil)
 
-	// Expected behavior is to return a root node with a single Text child.
+	// Expected behavior is to return a root node with Text and EOF
+	// children.
 	children := ast.Children
-	if len(children) != 1 {
+	if len(children) != 2 {
 		Pl(ast.AsJSON())
-		t.Fatalf("expected 1 child node, got %d", len(children))
+		t.Fatalf("expected 2 child nodes, got %d", len(children))
 	}
 	Tassert(t, children[0].Type == "Text", "expected child to be of type %q, got %q", "Text", children[0].Type)
 	Tassert(t, children[0].Content == "test line 1\ntest line 2\n", "expected child content to be %q, got %q", "test line 1\ntest line 2\n", children[0].Content)
+}
+
+// TestParseCodeBlockOnly tests the parser's behavior when the input contains only a code block.
+func TestParseCodeBlockOnly(t *testing.T) {
+	lex := NewLexer("```\nfoo\nbar\n```\n")
+	parser := NewParser(lex)
+	node := parser.parseCodeBlock("")
+	Tassert(t, node != nil)
+
+	// Expected behavior is to return a single CodeBlock node with two
+	// Text children: "foo\n" and "bar\n".
+	cbChildren := pt(t, node, "CodeBlock", "", 2)
+	pt(t, cbChildren[0], "Text", "foo\n", 0)
+	pt(t, cbChildren[1], "Text", "bar\n", 0)
+}
+
+// TestParseCodeBlockWithLanguage tests the parser's behavior when the input contains a code block with a language identifier.
+func TestParseCodeBlockWithLanguage(t *testing.T) {
+	lex := NewLexer("```go\npackage main\n```\n")
+	parser := NewParser(lex)
+	node := parser.parseCodeBlock("")
+	Tassert(t, node != nil)
+
+	// Expected behavior is to return a single CodeBlock node with the
+	// content "package main\n" and the language "go".
+	children := node.Children
+	if len(children) != 1 {
+		Pl(node.AsJSON())
+		t.Fatalf("expected 1 child node, got %d", len(children))
+	}
+	Tassert(t, children[0].Type == "Text", "expected child to be of type %q, got %q", "Text", children[0].Type)
+	Tassert(t, children[0].Content == "package main\n", "expected child content to be %q, got %q", "package main\n", children[0].Content)
+	Tassert(t, node.Language == "go", "expected language to be %q, got %q", "go", node.Language)
 }
 
 // TestParseFileBlock tests the parser's behavior when the input contains a single file block.
@@ -400,16 +482,14 @@ func TestParseFileBlock(t *testing.T) {
 	}
 	Tassert(t, ast != nil)
 
-	// Expected behavior is to return a root node with a single File
-	// child.  The File child should have the name "foo" and the content
-	// "bar\n".
-	children := ast.Children
-	if len(children) != 1 {
-		Pl(ast.AsJSON())
-		t.Fatalf("expected 1 child node, got %d", len(children))
-	}
-	Tassert(t, children[0].Type == "File", "expected child to be of type %q, got %q", "File", children[0].Type)
-	Tassert(t, children[0].Content == "bar\n", "expected child content to be %q, got %q", "bar\n", children[0].Content)
+	// Expected behavior is to return a root node with a File and EOF
+	// children.  The File child should have the name "foo" and a
+	// single Text child with the content "bar\n".
+	rootChildren := pt(t, ast, "Root", "", 2)
+	fileChildren := pt(t, rootChildren[0], "File", "", 1)
+	pt(t, fileChildren[0], "Text", "bar\n", 0)
+
+	pt(t, rootChildren[1], "EOF", "", 0)
 }
 
 // TestParseFileBlockWithLanguage tests the parser's behavior when the input contains a file block with a language identifier.
@@ -421,15 +501,14 @@ func TestParseFileBlockWithLanguage(t *testing.T) {
 	}
 	Tassert(t, ast != nil)
 
-	// Expected behavior is to return a root node with a single File child.
-	children := ast.Children
-	if len(children) != 1 {
-		Pl(ast.AsJSON())
-		t.Fatalf("expected 1 child node, got %d", len(children))
-	}
-	Tassert(t, children[0].Type == "File", "expected child to be of type %q, got %q", "File", children[0].Type)
-	Tassert(t, children[0].Content == "package main\n", "expected child content to be %q, got %q", "package main\n", children[0].Content)
-	Tassert(t, children[0].Language == "go", "expected child language to be %q, got %q", "go", children[0].Language)
+	// Expected behavior is to return a root node with File and EOF
+	// children.  The File child should have language "go" and a single
+	// Text child with content "package main\n".
+	rootChildren := pt(t, ast, "Root", "", 2)
+	fileChildren := pt(t, rootChildren[0], "File", "", 1)
+	pt(t, fileChildren[0], "Text", "package main\n", 0)
+
+	pt(t, rootChildren[1], "EOF", "", 0)
 }
 
 // TestParseTripleBacktickOnly tests the parser's behavior when the input contains only triple backticks.
@@ -441,14 +520,12 @@ func TestParseTripleBacktickOnly(t *testing.T) {
 	}
 	Tassert(t, ast != nil)
 
-	// Expected behavior is to return a root node with a single Text child.
-	children := ast.Children
-	if len(children) != 1 {
-		Pl(ast.AsJSON())
-		t.Fatalf("expected 1 child node, got %d", len(children))
-	}
-	Tassert(t, children[0].Type == "Text", "expected child to be of type %q, got %q", "Text", children[0].Type)
-	Tassert(t, children[0].Content == "```\n```\n```\n", "expected child content to be %q, got %q", "```\n```\n```\n", children[0].Content)
+	// Expected behavior is to return a root node with a single
+	// CodeBlock child and an EOF child.  The CodeBlock child should
+	// have the content "```\n".
+	rootChildren := pt(t, ast, "Root", "", 2)
+	pt(t, rootChildren[0], "CodeBlock", "```\n", 0)
+	pt(t, rootChildren[1], "EOF", "", 0)
 }
 
 // TestParseBacktracking tests the parser's ability to backtrack and reprocess input from a certain point.
@@ -461,24 +538,26 @@ func TestParseBacktracking(t *testing.T) {
 	}
 	Tassert(t, ast != nil)
 
-	// Expected behavior is to return a root node with 1 child: a Text
-	// node.  The parser will checkpoint the lexer, then start a File
-	// node when it sees the File: line, then it will hit end of input
-	// without finding an EOF_ token, at which point it will rollback
-	// the lexer and re-parse the File: line and everything after it
-	// as a Text node.  In order for this to work, the parser must
-	// checkpoint the lexer before it starts parsing any new node, and
-	// it must rollback the lexer if it encounters an error while
-	// parsing a node.  The parser must have some sense of node
-	// priority, trying more complex nodes like File before simpler
-	// nodes like Text.
+	// Expected behavior is to return a root node with 2 children: a
+	// Text node and an EOF node.  The Text node should have the
+	// content "File: bar\n```\nbaz\ntrailing text\n". The parser will
+	// checkpoint the lexer, then start a File node when it sees the
+	// File: line, then it will hit end of input without finding an
+	// EOF_ token, at which point it will rollback the lexer and
+	// re-parse the File: line and everything after it as a Text node.
+	// In order for this to work, the parser must checkpoint the lexer
+	// before it starts parsing any new node, and it must rollback the
+	// lexer if it encounters an error while parsing a node.  The
+	// parser must have some sense of node priority, trying more
+	// complex nodes like File before simpler nodes like Text.
 	children := ast.Children
-	if len(children) != 1 || len(children) > 1 && children[0].Type != "Text" {
+	if len(children) != 2 {
 		Pl(ast.AsJSON())
-		t.Fatalf("expected 1 child Text node, got %d", len(children))
+		t.Fatalf("expected 2 child nodes, got %d", len(children))
 	}
 	Tassert(t, children[0].Type == "Text", "expected first child to be of type %q, got %q", "Text", children[0].Type)
 	Tassert(t, children[0].Content == input, "expected child content to be %q, got %q", input, children[0].Content)
+	Tassert(t, children[1].Type == "EOF", "expected second child to be of type %q, got %q", "EOF", children[1].Type)
 }
 
 // TestParseNoEOF tests the parser's behavior when the input contains a file block without an EOF marker.

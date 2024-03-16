@@ -54,7 +54,6 @@ func (l *Lexer) Next() Token {
 		// Enhanced handling to differentiate between opening and closing backticks
 		return l.emitWithSkip("TripleBacktick", tripleBacktick)
 	}
-
 	return l.emitText()
 }
 
@@ -80,10 +79,10 @@ func (l *Lexer) emitText() Token {
 	for l.pos < len(l.input) && l.input[l.pos] != '\n' {
 		l.pos++
 	}
-	data := l.input[start:l.pos]
 	if l.pos < len(l.input) && l.input[l.pos] == '\n' {
 		l.pos++ // Move past the newline, if present
 	}
+	data := l.input[start:l.pos]
 	return Token{Type: "Text", Data: data}
 }
 
