@@ -13,8 +13,9 @@ type Lexer struct {
 
 // Token represents a lexical token with an associated type and data.
 type Token struct {
-	Type string // The type of the token (e.g., "Text", "FileStart", "FileEnd", "TripleBacktick")
-	Data string // The data contained within the token
+	Type    string // The type of the token (e.g., "Text", "FileStart", "FileEnd", "TripleBacktick")
+	Payload string // The data contained within the token
+	Src     string // The original source text for the token
 }
 
 // NewLexer creates a new Lexer for tokenizing the given input string.
@@ -32,88 +33,116 @@ func (l *Lexer) Rollback(cp int) {
 	l.pos = cp
 }
 
+// try is a helper function that attempts to generate a token given a
+// matching function. If the matching function returns a token, it is
+// returned; otherwise, the lexer's position is rolled back and nil is
+// returned.
+func (l *Lexer) try(fn func() *Token) *Token {
+	cp := l.Checkpoint()
+	token := fn()
+	if token != nil {
+		return token
+	}
+	l.Rollback(cp)
+	return nil
+}
+
 // Next retrieves the next token, advancing the lexer's position.
 func (l *Lexer) Next() Token {
 	if l.pos >= len(l.input) {
 		return Token{Type: "EOF"}
 	}
 
-	tripleBacktick := "```"
+	// tripleBacktick := "```"
 	/*
 		backtick := "`"
 		tbpat := `^` + tripleBacktick + `([^` + backtick + `]*|$)`
 		tbre := regexp.MustCompile(tbpat)
 	*/
 
+	// recursive descent lexer
+	var token *Token
+	for {
+		token = l.try(l.fileStart)
+		if token != nil {
+			break
+		}
+		token = l.try(l.fileEnd)
+		if token != nil {
+			break
+		}
+		token = l.try(l.tripleBacktick)
+		if token != nil {
+			break
+		}
+		token = l.try(l.newline)
+		if token != nil {
+			break
+		}
+		token = l.text()
+		break
+	}
+	return *token
+}
+
+func (l *Lexer) fileStart() *Token {
 	if strings.HasPrefix(l.input[l.pos:], "File: ") {
 		return l.emitWithSkip("FileStart", "File: ")
-	} else if strings.HasPrefix(l.input[l.pos:], "EOF_") {
-		return l.emitWithSkip("FileEnd", "EOF_")
-		// } else if tbre.MatchString(l.input[l.pos:]) {
-	} else if strings.HasPrefix(l.input[l.pos:], "```") && (l.pos+3 == len(l.input) || l.input[l.pos+3] != '`') {
-		// Enhanced handling to differentiate between opening and closing backticks
-		return l.emitWithSkip("TripleBacktick", tripleBacktick)
 	}
-	return l.emitText()
+	return nil
+}
+
+func (l *Lexer) fileEnd() *Token {
+	if strings.HasPrefix(l.input[l.pos:], "EOF_") {
+		return l.emitWithSkip("FileEnd", "EOF_")
+	}
+	return nil
+}
+
+func (l *Lexer) tripleBacktick() *Token {
+	if strings.HasPrefix(l.input[l.pos:], "```") && (l.pos+3 == len(l.input) || l.input[l.pos+3] != '`') {
+		return l.emitWithSkip("TripleBacktick", "```")
+	}
+	return nil
+}
+
+func (l *Lexer) newline() *Token {
+	if strings.HasPrefix(l.input[l.pos:], "\r\n") {
+		l.pos += 2
+		return &Token{Type: "Newline", Src: "\r\n"}
+	}
+	if strings.HasPrefix(l.input[l.pos:], "\n") {
+		l.pos++
+		return &Token{Type: "Newline", Src: "\n"}
+	}
+	return nil
+}
+
+func (l *Lexer) text() *Token {
+	start := l.pos
+	end := strings.IndexAny(l.input[start:], "\r\n")
+	if end == -1 {
+		end = len(l.input)
+	} else {
+		end += start
+	}
+	src := l.input[start:end]
+	l.pos = end
+	return &Token{Type: "Text", Src: src}
 }
 
 // emitWithSkip generates a token with a specified type by skipping over
 // a predefined marker and collecting the subsequent text.
-func (l *Lexer) emitWithSkip(tokenType, startMarker string) Token {
-	startPos := l.pos + len(startMarker)
-	endPos := strings.Index(l.input[startPos:], "\n")
+func (l *Lexer) emitWithSkip(tokenType, startMarker string) *Token {
+	payloadStart := l.pos + len(startMarker)
+	endPos := strings.IndexAny(l.input[payloadStart:], "\r\n")
 	if endPos == -1 {
 		endPos = len(l.input)
 	} else {
-		endPos += startPos
+		endPos += payloadStart
 	}
-	data := l.input[startPos:endPos]
-	l.pos = endPos + 1 // Move past the newline
-	return Token{Type: tokenType, Data: data}
-}
-
-// emitText gathers and returns a text token ending at a newline.
-func (l *Lexer) emitText() Token {
-	start := l.pos
-	// Move to the end of the line or the end of the input
-	for l.pos < len(l.input) && l.input[l.pos] != '\n' {
-		l.pos++
-	}
-	if l.pos < len(l.input) && l.input[l.pos] == '\n' {
-		l.pos++ // Move past the newline, if present
-	}
-	data := l.input[start:l.pos]
-	return Token{Type: "Text", Data: data}
-}
-
-// emitCodeBlock differentiates between opening TripleBackticks possibly including a language identifier
-// and simple TripleBackticks that close a code block.
-func (l *Lexer) emitCodeBlock() Token {
-	startPos := l.pos + 3 // Skip the backticks themselves
-	l.pos = startPos
-
-	// Find the end of the line to check for a language identifier
-	endPos := strings.Index(l.input[startPos:], "\n")
-	if endPos == -1 {
-		l.pos = len(l.input) // Move to the end if there's no newline
-		return Token{Type: "TripleBacktick", Data: ""}
-	}
-
-	data := strings.TrimSpace(l.input[startPos : startPos+endPos])
-	l.pos = startPos + endPos + 1 // Move past the newline
-	return Token{Type: "TripleBacktick", Data: data}
-}
-
-// Run processes the entire input and returns all identified tokens.
-func (l *Lexer) Run() []Token {
-	var tokens []Token
-	for {
-		token := l.Next()
-		if token.Type == "EOF" {
-			tokens = append(tokens, token) // Include EOF in the result
-			break
-		}
-		tokens = append(tokens, token)
-	}
-	return tokens
+	src := l.input[l.pos:endPos]
+	payload := l.input[payloadStart:endPos]
+	l.pos = endPos
+	return &Token{Type: tokenType, Payload: payload, Src: src}
 }

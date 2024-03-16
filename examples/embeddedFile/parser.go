@@ -2,6 +2,7 @@ package embedded
 
 import (
 	"encoding/json"
+	// . "github.com/stevegt/goadapt"
 )
 
 // Parser prepares tokens from a lexer into an Abstract Syntax Tree.
@@ -73,7 +74,11 @@ func (p *Parser) parse() *ASTNode {
 			if node != nil {
 				break
 			}
-			node = p.parseText()
+			node = p.Try(p.parseCodeBlock, "")
+			if node != nil {
+				break
+			}
+			node = p.parseAnyAsText()
 			break
 		}
 		root.Children = append(root.Children, node)
@@ -85,10 +90,10 @@ func (p *Parser) parse() *ASTNode {
 	return root
 }
 
-func (p *Parser) parseText() *ASTNode {
+func (p *Parser) parseAnyAsText() *ASTNode {
 	lex := p.lexer
 	token := lex.Next()
-	textNode := &ASTNode{Type: "Text", Content: token.Data}
+	textNode := &ASTNode{Type: "Text", Content: token.Src}
 	return textNode
 }
 
@@ -106,8 +111,10 @@ func (p *Parser) parseFile(args ...any) *ASTNode {
 		return nil
 	}
 	fileNode := NewASTNode("File", "")
-	fileNode.Name = fileStartToken.Data
-
+	fileNode.Name = fileStartToken.Payload
+	if p.Try(p.parseNewline) == nil {
+		return nil
+	}
 	codeNode := p.parseCodeBlock(fileNode.Name)
 	if codeNode == nil {
 		return nil
@@ -116,7 +123,8 @@ func (p *Parser) parseFile(args ...any) *ASTNode {
 	return fileNode
 }
 
-func (p *Parser) parseCodeBlock(fileName string) *ASTNode {
+func (p *Parser) parseCodeBlock(args ...any) *ASTNode {
+	fileName := args[0].(string)
 	lex := p.lexer
 	codeNode := NewASTNode("CodeBlock", "")
 	// cpFirstBacktick := lex.Checkpoint()
@@ -152,16 +160,35 @@ func (p *Parser) parseCodeBlock(fileName string) *ASTNode {
 			lex.Rollback(cpBacktick)
 		}
 		// anything else is just text
-		textNode := p.parseText()
+		textNode := p.parseAnyAsText()
 		codeNode.Children = append(codeNode.Children, textNode)
 	}
 	return codeNode
 }
 
+func (p *Parser) parseNewline(args ...any) *ASTNode {
+	token := p.lexer.Next()
+	if token.Type == "Newline" {
+		return NewASTNode("Newline", token.Src)
+	}
+	return nil
+}
+
+func (p *Parser) parseNewlineOrEOF(args ...any) *ASTNode {
+	node := p.Try(p.parseNewline)
+	if node == nil {
+		node = p.Try(p.parseEOF)
+	}
+	return node
+}
+
 func (p *Parser) parseFileEnd(args ...any) *ASTNode {
 	fileName := args[0].(string)
 	token := p.lexer.Next()
-	if token.Type == "FileEnd" && token.Data == fileName {
+	if token.Type == "FileEnd" && token.Payload == fileName {
+		if p.Try(p.parseNewlineOrEOF) == nil {
+			return nil
+		}
 		return NewASTNode("FileEnd", "")
 	}
 	return nil
@@ -171,7 +198,10 @@ func (p *Parser) parseTripleBacktick(args ...any) *ASTNode {
 	token := p.lexer.Next()
 	if token.Type == "TripleBacktick" {
 		node := NewASTNode("TripleBacktick", "")
-		node.Language = token.Data
+		node.Language = token.Payload
+		if p.Try(p.parseNewlineOrEOF) == nil {
+			return nil
+		}
 		return node
 	}
 	return nil
