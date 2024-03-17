@@ -1,6 +1,7 @@
 package embedded
 
 import (
+	"regexp"
 	"strings"
 )
 
@@ -62,25 +63,21 @@ func (l *Lexer) Next() Token {
 
 	// recursive descent lexer
 	var token *Token
-	for {
-		token = l.try(l.fileStart)
+	funcs := []func() *Token{
+		l.fileStart,
+		l.fileEnd,
+		l.tripleBacktick,
+		l.newline,
+		l.role,
+	}
+	for _, fn := range funcs {
+		token = l.try(fn)
 		if token != nil {
 			break
 		}
-		token = l.try(l.fileEnd)
-		if token != nil {
-			break
-		}
-		token = l.try(l.tripleBacktick)
-		if token != nil {
-			break
-		}
-		token = l.try(l.newline)
-		if token != nil {
-			break
-		}
+	}
+	if token == nil {
 		token = l.text()
-		break
 	}
 	return *token
 }
@@ -129,6 +126,26 @@ func (l *Lexer) text() *Token {
 	src := l.input[start:end]
 	l.pos = end
 	return &Token{Type: "Text", Src: src}
+}
+
+// role emits a token for a role (e.g., "USER: " or "AI: ").
+// Role tokens signify the start of a USER: or AI: section in an LLM
+// chat log.  The lexer should return a Role token for each line in
+// the input that starts with "USER: " or "AI: ", with the role name
+// as the token's payload. Any text on the same line after the "USER: "
+// or "AI: " should be returned as a Text token.
+func (l *Lexer) role() *Token {
+	token := &Token{Type: "Role"}
+	pat := `^((USER|AI): *)`
+	re := regexp.MustCompile(pat)
+	m := re.FindStringSubmatch(l.input[l.pos:])
+	if m != nil {
+		token.Src = m[1]
+		token.Payload = m[2]
+		l.pos += len(token.Src)
+		return token
+	}
+	return nil
 }
 
 // emitWithSkip generates a token with a specified type by skipping over

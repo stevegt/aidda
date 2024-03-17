@@ -298,15 +298,20 @@ func TestLexerBacktickLanguage(t *testing.T) {
 // as the token's payload. Any text on the same line after the "USER: "
 // or "AI: " should be returned as a Text token.
 func TestLexerUserAIStart(t *testing.T) {
-	lexer := NewLexer("USER: foo\nbaz\nAI: bar\n")
-	lt(t, lexer, "Role", "USER:", "USER")
+	lexer := NewLexer("USER: foo\nbaz\nAI: bar\nUSER:\nbing\n USER: baz")
+	lt(t, lexer, "Role", "USER: ", "USER")
 	lt(t, lexer, "Text", "foo", "")
 	lt(t, lexer, "Newline", "\n", "")
 	lt(t, lexer, "Text", "baz", "")
 	lt(t, lexer, "Newline", "\n", "")
-	lt(t, lexer, "Role", "AI:", "AI")
+	lt(t, lexer, "Role", "AI: ", "AI")
 	lt(t, lexer, "Text", "bar", "")
 	lt(t, lexer, "Newline", "\n", "")
+	lt(t, lexer, "Role", "USER:", "USER")
+	lt(t, lexer, "Newline", "\n", "")
+	lt(t, lexer, "Text", "bing", "")
+	lt(t, lexer, "Newline", "\n", "")
+	lt(t, lexer, "Text", " USER: baz", "")
 	lt(t, lexer, "EOF", "", "")
 }
 
