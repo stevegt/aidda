@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"testing"
 
+	jd "github.com/josephburnett/jd/lib"
 	. "github.com/stevegt/goadapt"
 )
 
@@ -62,13 +63,39 @@ func pt(t *testing.T, node *ASTNode, typ, content string, childrenCount int) (ch
 	}
 	if !pass {
 		if node != nil {
-			msg += node.AsJSON()
+			msg += node.AsJSON(true)
 		}
 		// print message and fail test
 		t.Logf("%s: %s", caller, msg)
 		t.FailNow()
 	}
 	return node.Children
+}
+
+// ptj (parser test json) asserts that the given node's JSON
+// representation is equal to the given value.  If the assertion
+// fails, ptj returns the node's JSON representation along with the
+// difference between the expected and actual JSON strings.
+func ptj(t *testing.T, node *ASTNode, expected string) {
+	_, file, line, _ := runtime.Caller(1)
+	caller := fmt.Sprintf("%s:%d", file, line)
+	actual, err := jd.ReadJsonString(node.AsJSON(true))
+	if err != nil {
+		t.Logf("%s: %s", caller, err)
+		t.Fatal(err)
+	}
+	expect, err := jd.ReadJsonString(expected)
+	if err != nil {
+		t.Logf("expected: %s", expected)
+		t.Logf("actual:\n%s", node.AsJSON(true))
+		t.Logf("%s: %s", caller, err)
+		t.Fatal(err)
+	}
+	if !expect.Equals(actual) {
+		t.Logf("actual:\n%s", node.AsJSON(true))
+		t.Log(expect.Diff(actual).Render())
+		t.FailNow()
+	}
 }
 
 // Helper function to split a byte slice into lines.  Each line
@@ -334,7 +361,7 @@ func TestParseASTString(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	j := ast.AsJSON()
+	j := ast.AsJSON(true)
 	Tassert(t, j != "", "expected non-empty JSON string, got %q", j)
 }
 
@@ -489,7 +516,7 @@ func TestParseFunctional(t *testing.T) {
 	lex := NewLexer(string(buf))
 	ast, err := Parse(lex)
 	Tassert(t, err == nil, "expected no error, got %v", err)
-	t.Log(ast.AsJSON())
+	t.Log(ast.AsJSON(true))
 
 	// split buf into lines
 	lines := bytesToLines(buf)
@@ -565,4 +592,34 @@ func TestParseRole(t *testing.T) {
 	ai2Children := pt(t, rootChildren[3], "Role", "AI:", 1)
 	pt(t, ai2Children[0], "Text", "ok\n", 0)
 	pt(t, rootChildren[4], "EOF", "", 0)
+}
+
+// TestNestedRoles tests the parser's ability to handle USER: and AI:
+// role sections nested within File blocks.
+func TestNestedRoles(t *testing.T) {
+	lex := NewLexer("USER:\nbang\nFile: foo\n```markdown\nUSER: bar\nAI: baz\n```\nEOF_foo\nAI:\nbing\n")
+	ast, err := Parse(lex)
+	Tassert(t, err == nil, "expected no error, got %v", err)
+	rootChildren := pt(t, ast, "Root", "", 3)
+	user := rootChildren[0]
+	ai := rootChildren[1]
+	eof := rootChildren[2]
+	// USER:
+	{
+		children := pt(t, user, "Role", "USER:", 2)
+		file := children[1]
+		pt(t, children[0], "Text", "bang\n", 0)
+		// File: foo
+		{
+			children := pt(t, file, "File", "", 1)
+			pt(t, children[0], "Text", "USER: bar\nAI: baz\n", 0)
+			Tassert(t, file.Language == "markdown", "expected file language to be markdown, got %q", file.Language)
+		}
+	}
+	// AI:
+	{
+		children := pt(t, ai, "Role", "AI:", 1)
+		pt(t, children[0], "Text", "bing\n", 0)
+	}
+	pt(t, eof, "EOF", "", 0)
 }

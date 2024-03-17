@@ -2,7 +2,8 @@ package embedded
 
 import (
 	"encoding/json"
-	// . "github.com/stevegt/goadapt"
+
+	. "github.com/stevegt/goadapt"
 )
 
 // Parser prepares tokens from a lexer into an Abstract Syntax Tree.
@@ -158,6 +159,7 @@ func (p *Parser) parseFile(args ...any) *ASTNode {
 	if codeNode == nil {
 		return nil
 	}
+	fileNode.Language = codeNode.Language
 	fileNode.Children = append(fileNode.Children, codeNode.Children...)
 	return fileNode
 }
@@ -254,10 +256,14 @@ func Parse(lexer *Lexer) (*ASTNode, error) {
 }
 
 // AsJSON returns the AST as a JSON string.
-func (n *ASTNode) AsJSON() string {
-	buf, err := json.MarshalIndent(n, "", "  ")
-	if err != nil {
-		return err.Error()
+func (n *ASTNode) AsJSON(pretty bool) string {
+	var buf []byte
+	var err error
+	if pretty {
+		buf, err = json.MarshalIndent(n, "", "  ")
+	} else {
+		buf, err = json.Marshal(n)
 	}
+	Ck(err)
 	return string(buf)
 }
