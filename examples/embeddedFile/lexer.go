@@ -4,86 +4,46 @@ import (
 	"strings"
 )
 
-// Lexer is responsible for tokenizing an input string based on specific
-// delimiters and markers, facilitating the parsing of embedded content.
+// Lexer struct will tokenize the input string.
 type Lexer struct {
-	input string // The input string to tokenize
-	pos   int    // Current position within the input
+	input string // The input string to tokenize.
+	pos   int    // Current position within the input.
 }
 
-// Token represents a lexical token with an associated type and data.
+// Token represents a lexical unit in the input stream.
 type Token struct {
-	Type    string // The type of the token (e.g., "Text", "FileStart", "FileEnd", "TripleBacktick")
-	Payload string // The data contained within the token
-	Src     string // The original source text for the token
+	Type    string // Type of the token, e.g., Text, FileStart, Newline.
+	Payload string // The payload of the token, holding relevant data.
+	Src     string // The source text represented by the token.
 }
 
-// NewLexer creates a new Lexer for tokenizing the given input string.
+// NewLexer initializes a new Lexer with the provided input.
 func NewLexer(input string) *Lexer {
 	return &Lexer{input: input}
 }
 
-// Checkpoint returns the current position in the input for potential backtracking.
+// Checkpoint returns the current position in the input.
 func (l *Lexer) Checkpoint() int {
 	return l.pos
 }
 
-// Rollback reverts the current position to the given position.
+// Rollback moves the current position back to the specified checkpoint.
 func (l *Lexer) Rollback(cp int) {
 	l.pos = cp
 }
 
-// try is a helper function that attempts to generate a token given a
-// matching function. If the matching function returns a token, it is
-// returned; otherwise, the lexer's position is rolled back and nil is
-// returned.
+// try attempts to produce a token using the provided function.
+// If unsuccessful, it rolls back to the previous checkpoint.
 func (l *Lexer) try(fn func() *Token) *Token {
 	cp := l.Checkpoint()
 	token := fn()
-	if token != nil {
-		return token
+	if token == nil {
+		l.Rollback(cp)
 	}
-	l.Rollback(cp)
-	return nil
+	return token
 }
 
-// Next retrieves the next token, advancing the lexer's position.
-func (l *Lexer) Next() Token {
-	if l.pos >= len(l.input) {
-		return Token{Type: "EOF"}
-	}
-
-	// tripleBacktick := "```"
-	/*
-		backtick := "`"
-		tbpat := `^` + tripleBacktick + `([^` + backtick + `]*|$)`
-		tbre := regexp.MustCompile(tbpat)
-	*/
-
-	// recursive descent lexer
-	var token *Token
-	for {
-		token = l.try(l.fileStart)
-		if token != nil {
-			break
-		}
-		token = l.try(l.fileEnd)
-		if token != nil {
-			break
-		}
-		token = l.try(l.tripleBacktick)
-		if token != nil {
-			break
-		}
-		token = l.try(l.newline)
-		if token != nil {
-			break
-		}
-		token = l.text()
-		break
-	}
-	return *token
-}
+// Methods for generating specific tokens (fileStart, fileEnd, tripleBacktick, newline, text).
 
 func (l *Lexer) fileStart() *Token {
 	if strings.HasPrefix(l.input[l.pos:], "File: ") {
@@ -100,49 +60,66 @@ func (l *Lexer) fileEnd() *Token {
 }
 
 func (l *Lexer) tripleBacktick() *Token {
-	if strings.HasPrefix(l.input[l.pos:], "```") && (l.pos+3 == len(l.input) || l.input[l.pos+3] != '`') {
+	if strings.HasPrefix(l.input[l.pos:], "```") {
 		return l.emitWithSkip("TripleBacktick", "```")
 	}
 	return nil
 }
 
 func (l *Lexer) newline() *Token {
-	if strings.HasPrefix(l.input[l.pos:], "\r\n") {
-		l.pos += 2
-		return &Token{Type: "Newline", Src: "\r\n"}
-	}
-	if strings.HasPrefix(l.input[l.pos:], "\n") {
+	if l.pos < len(l.input) && l.input[l.pos] == '\n' {
 		l.pos++
 		return &Token{Type: "Newline", Src: "\n"}
 	}
 	return nil
 }
 
-func (l *Lexer) text() *Token {
-	start := l.pos
-	end := strings.IndexAny(l.input[start:], "\r\n")
-	if end == -1 {
-		end = len(l.input)
-	} else {
-		end += start
+func (l *Lexer) role() *Token {
+	if strings.HasPrefix(l.input[l.pos:], "USER: ") {
+		return l.emitWithSkip("Role", "USER: ")
+	} else if strings.HasPrefix(l.input[l.pos:], "AI: ") {
+		return l.emitWithSkip("Role", "AI: ")
 	}
-	src := l.input[start:end]
-	l.pos = end
-	return &Token{Type: "Text", Src: src}
+	return nil
 }
 
-// emitWithSkip generates a token with a specified type by skipping over
-// a predefined marker and collecting the subsequent text.
-func (l *Lexer) emitWithSkip(tokenType, startMarker string) *Token {
-	payloadStart := l.pos + len(startMarker)
-	endPos := strings.IndexAny(l.input[payloadStart:], "\r\n")
-	if endPos == -1 {
-		endPos = len(l.input)
-	} else {
-		endPos += payloadStart
+func (l *Lexer) text() *Token {
+	start := l.pos
+	for l.pos < len(l.input) && l.input[l.pos] != '\n' {
+		l.pos++
 	}
-	src := l.input[l.pos:endPos]
-	payload := l.input[payloadStart:endPos]
-	l.pos = endPos
-	return &Token{Type: tokenType, Payload: payload, Src: src}
+	return &Token{Type: "Text", Src: l.input[start:l.pos]}
+}
+
+// Next produces the next token from the input.
+func (l *Lexer) Next() Token {
+	if l.pos >= len(l.input) {
+		return Token{Type: "EOF"}
+	}
+
+	// Attempt to match token types in order of specificity.
+	token := l.try(l.fileStart) 
+	if token == nil { 
+		token = l.try(l.fileEnd) 
+	}
+	if token == nil { 
+		token = l.try(l.tripleBacktick) 
+	}
+	if token == nil { 
+		token = l.try(l.newline) 
+	}
+	if token == nil { 
+		token = l.try(l.text) 
+	}
+	if token == nil {
+		// If no token match is found, return EOF to avoid an infinite loop.
+		return Token{Type: "EOF"}
+	}
+	return *token
+}
+
+// emitWithSkip generates a token by skipping a given substring in the input.
+func (l *Lexer) emitWithSkip(tokenType, skip string) *Token {
+	end := l.pos + len(skip)
+	return &Token{Type: tokenType, Payload: l.input[l.pos:end], Src: l.input[l.pos:end]}
 }
