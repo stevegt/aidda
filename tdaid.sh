@@ -1,8 +1,9 @@
 #!/bin/bash
 
-usage="usage: tdaid.sh {branch} [-c | -t] [outputfile1] [outputfile2] ...
+usage="usage: tdaid.sh {branch} {-c | -t | -s sysmsg } [outputfile1] [outputfile2] ...
     -c:  write code
     -t:  write tests
+    -s:  execute custom sysmsg
 "
 
 cmdline="$0 $@"
@@ -19,13 +20,18 @@ fi
 
 # parse command line options
 unset mode
-while getopts "ct" opt
+while getopts "cs:t" opt
 do
     case $opt in
         c)  mode=code
             shift
             ;;
         t)  mode=tests
+            shift
+            ;;
+        s)  mode=custom
+            shift
+            sysmsgcustom=$1
             shift
             ;;
     esac
@@ -109,6 +115,13 @@ do
         tests)  sysmsg=$sysmsgtest
                 # if tests fail, exit
                 if grep -q "FAIL" /tmp/$$.test
+                then
+                    break
+                fi
+                ;;
+        custom) sysmsg=$sysmsgcustom
+                # if tests pass, exit
+                if ! grep -q "FAIL" /tmp/$$.test
                 then
                     break
                 fi
