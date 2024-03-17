@@ -541,3 +541,28 @@ func TestParseEmbeddedFileBlocks(t *testing.T) {
 	pt(t, fileChildren[0], "Text", "Some content\nFile: inner_file.md\n```\ninner_file.md content\n```\nEOF_inner_file.md\n", 0)
 	pt(t, rootChildren[1], "EOF", "", 0)
 }
+
+// TestParseRole tests the parser's ability to handle USER: and AI:
+// role sections in an LLM chat log. Nested inside the role sections
+// are other nodes like File, CodeBlock, or Text.
+func TestParseRole(t *testing.T) {
+	lex := NewLexer("USER: bong\nbaz\nAI: bar\nUSER:\nbing\nFile: foo\n```\nboom\n```\nEOF_foo\nAI:\nok\n")
+	ast, err := Parse(lex)
+	Tassert(t, err == nil, "expected no error, got %v", err)
+	// Expected behavior is to return a root node with 5 children:
+	// Four alternating USER and AI Role nodes, and an EOF node.  The
+	// USER and AI Role nodes should each have Text and/or File
+	// children.
+	rootChildren := pt(t, ast, "Root", "", 5)
+	user1Children := pt(t, rootChildren[0], "Role", "USER: ", 1)
+	pt(t, user1Children[0], "Text", "bong\nbaz\n", 0)
+	ai1Children := pt(t, rootChildren[1], "Role", "AI: ", 1)
+	pt(t, ai1Children[0], "Text", "bar\n", 0)
+	user2Children := pt(t, rootChildren[2], "Role", "USER:", 2)
+	pt(t, user2Children[0], "Text", "bing\n", 0)
+	fileChildren := pt(t, user2Children[1], "File", "", 1)
+	pt(t, fileChildren[0], "Text", "boom\n", 0)
+	ai2Children := pt(t, rootChildren[3], "Role", "AI:", 1)
+	pt(t, ai2Children[0], "Text", "ok\n", 0)
+	pt(t, rootChildren[4], "EOF", "", 0)
+}

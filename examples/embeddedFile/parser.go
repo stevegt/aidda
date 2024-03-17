@@ -61,26 +61,36 @@ func (p *Parser) Try(fn func(...any) *ASTNode, args ...any) *ASTNode {
 	return node
 }
 
+// nextNode returns the next node from the lexer.
+func (p *Parser) nextNode() *ASTNode {
+	var node *ASTNode
+	for {
+		node = p.Try(p.parseRole)
+		if node != nil {
+			break
+		}
+		node = p.Try(p.parseEOF)
+		if node != nil {
+			break
+		}
+		node = p.Try(p.parseFile)
+		if node != nil {
+			break
+		}
+		node = p.Try(p.parseCodeBlock, "")
+		if node != nil {
+			break
+		}
+		node = p.parseAnyAsText()
+		break
+	}
+	return node
+}
+
 func (p *Parser) parse() *ASTNode {
 	root := NewASTNode("Root", "")
 	for {
-		var node *ASTNode
-		for {
-			node = p.Try(p.parseEOF)
-			if node != nil {
-				break
-			}
-			node = p.Try(p.parseFile)
-			if node != nil {
-				break
-			}
-			node = p.Try(p.parseCodeBlock, "")
-			if node != nil {
-				break
-			}
-			node = p.parseAnyAsText()
-			break
-		}
+		node := p.nextNode()
 		root.Children = append(root.Children, node)
 		if node.Type == "EOF" {
 			break
@@ -88,6 +98,35 @@ func (p *Parser) parse() *ASTNode {
 	}
 	root.ConcatenateTextNodes()
 	return root
+}
+
+func (p *Parser) parseRole(args ...any) *ASTNode {
+	lex := p.lexer
+	token := lex.Next()
+	if token.Type != "Role" {
+		return nil
+	}
+	roleNode := &ASTNode{Type: "Role", Name: token.Payload, Content: token.Src}
+	// there might be a newline after the role name -- if so, skip it
+	p.Try(p.parseNewline)
+	// parse the role's children -- they might be anything other
+	// than a role
+	for {
+		cp := lex.Checkpoint()
+		node := p.nextNode()
+		if node.Type == "EOF" {
+			// we're at the end of the input
+			lex.Rollback(cp)
+			break
+		}
+		if node.Type == "Role" {
+			// we've hit another role, so we're done with this one
+			lex.Rollback(cp)
+			break
+		}
+		roleNode.Children = append(roleNode.Children, node)
+	}
+	return roleNode
 }
 
 func (p *Parser) parseAnyAsText() *ASTNode {
