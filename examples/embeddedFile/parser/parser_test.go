@@ -39,7 +39,7 @@ func pt(t *testing.T, node *ASTNode, typ, content string, childrenCount int) (ch
 	}
 	if !pass {
 		if node != nil {
-			msg += node.AsJSON()
+			msg += node.AsJSON(true)
 		}
 		// print message and fail test
 		t.Logf("%s: %s", caller, msg)
@@ -67,7 +67,7 @@ func TestParseASTString(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	j := ast.AsJSON()
+	j := ast.AsJSON(true)
 	Tassert(t, j != "", "expected non-empty JSON string, got %q", j)
 }
 
@@ -232,7 +232,7 @@ func TestParseFunctional(t *testing.T) {
 	lex := lexer.NewLexer(string(buf))
 	ast, err := Parse(lex)
 	Tassert(t, err == nil, "expected no error, got %v", err)
-	t.Log(ast.AsJSON())
+	t.Log(ast.AsJSON(true))
 
 	// split buf into lines
 	lines := bytesToLines(buf)
