@@ -292,6 +292,24 @@ func TestLexerBacktickLanguage(t *testing.T) {
 	lt(t, lexer, "EOF", "", "")
 }
 
+// Role tokens signify the start of a USER: or AI: section in an LLM
+// chat log.  The lexer should return a Role token for each line in
+// the input that starts with "USER: " or "AI: ", with the role name
+// as the token's payload. Any text on the same line after the "USER: "
+// or "AI: " should be returned as a Text token.
+func TestLexerUserAIStart(t *testing.T) {
+	lexer := NewLexer("USER: foo\nbaz\nAI: bar\n")
+	lt(t, lexer, "Role", "USER:", "USER")
+	lt(t, lexer, "Text", "foo", "")
+	lt(t, lexer, "Newline", "\n", "")
+	lt(t, lexer, "Text", "baz", "")
+	lt(t, lexer, "Newline", "\n", "")
+	lt(t, lexer, "Role", "AI:", "AI")
+	lt(t, lexer, "Text", "bar", "")
+	lt(t, lexer, "Newline", "\n", "")
+	lt(t, lexer, "EOF", "", "")
+}
+
 // The parser uses the backtracking lexer to process input as it
 // encounters different tokens.
 func TestParseEmptyInput(t *testing.T) {
@@ -518,20 +536,3 @@ func TestParseEmbeddedFileBlocks(t *testing.T) {
 	pt(t, fileChildren[0], "Text", "Some content\nFile: inner_file.md\n```\ninner_file.md content\n```\nEOF_inner_file.md\n", 0)
 	pt(t, rootChildren[1], "EOF", "", 0)
 }
-
-/*
-1. **TestParseMultipleFiles**: Verify the parser correctly handles input containing multiple file blocks.
-2. **TestParseNoEOF**: Test parsing input containing a file block without an EOF marker.
-4. **TestParseSpecialCharactersInContent**: Check how the parser deals with special characters or escape sequences within the text or file content.
-5. **TestParseWhitespaceHandling**: Verify the parser's behavior with unusual whitespace patterns, such as leading/trailing whitespaces in file names, file content, or around EOF markers.
-6. **TestParseInvalidUTF8**: Determine how the parser reacts to invalid UTF-8 sequences within the input.
-7. **TestParseLongFileContent**: Test the parser's ability to handle very long file contents to verify if there are any issues with buffer sizes or memory management.
-8. **TestParseSingleLineFileBlock**: Ensure that the parser correctly handles a file block defined in a single line.
-9. **TestParseFileNameCollisions**: Test how the parser behaves when two file blocks have the same name but different EOF markers or content.
-10. **TestParseEmptyFileContent**: Verify the behavior when a file block has no content between the start and EOF markers.
-11. **TestParseCommentLines**: Include tests for parsing input with lines that should be ignored, such as comments or annotations within the text.
-12. **TestParseUnexpectedEOFLocation**: Test cases where the EOF marker appears in unexpected locations, such as before the file content or at the very beginning/end of the input.
-13. **TestParseRobustnessAgainstMalformedInput**: Check the parser's robustness against various forms of malformed input, including incomplete file blocks, missing file names, and abrupt endings.
-14. **TestParseConcurrency**: If applicable, test the parser's behavior and correctness under concurrent execution to ensure thread safety if the Parse function is anticipated to be called from multiple goroutines.
-15. **TestParseErrorHandling**: Include tests that verify the parser returns meaningful error messages or codes for various error conditions, ensuring that clients can respond appropriately to different failure modes.
-*/
