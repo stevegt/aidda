@@ -1,4 +1,4 @@
-package embedded
+package lexer
 
 import (
 	"regexp"

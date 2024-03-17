@@ -1,18 +1,19 @@
-package embedded
+package parser
 
 import (
 	"encoding/json"
 	// . "github.com/stevegt/goadapt"
+	"embedded/lexer"
 )
 
 // Parser prepares tokens from a lexer into an Abstract Syntax Tree.
 type Parser struct {
-	lexer *Lexer // Lexer instance
-	pos   int    // Current token position
+	lexer *lexer.Lexer // Lexer instance
+	pos   int          // Current token position
 }
 
 // NewParser initializes a new parser from a lexer.
-func NewParser(lexer *Lexer) *Parser {
+func NewParser(lexer *lexer.Lexer) *Parser {
 	return &Parser{lexer: lexer}
 }
 
@@ -247,7 +248,7 @@ func (p *Parser) parseTripleBacktick(args ...any) *ASTNode {
 }
 
 // Parse create and runs a parser on the lexer's output and generates an AST.
-func Parse(lexer *Lexer) (*ASTNode, error) {
+func Parse(lexer *lexer.Lexer) (*ASTNode, error) {
 	parser := NewParser(lexer)
 	root := parser.parse()
 	return root, nil
