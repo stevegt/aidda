@@ -13,31 +13,28 @@ cmdline="$0 $@"
 startTime=$(date +%s)
 
 # parse command line options
-while getopts "b:cs:t" opt
+while getopts "b:cI:s:tZ" opt
 do
     case $opt in
         b)  branch=$OPTARG
-            shift
             ;;
         c)  mode=code
-            shift
             ;;
         I)  container_image=$OPTARG
-            shift
-            ;;
-        t)  mode=tests
-            shift
             ;;
         s)  mode=custom
-            shift
             sysmsgcustom=$OPTARG
-            shift
+            ;;
+        t)  mode=tests
             ;;
         Z)  inContainer=1
-            shift
+            ;;
+        *)  echo "$usage"
+            exit 1
             ;;
     esac
 done
+shift $((OPTIND - 1))
 
 if [ -n "$inContainer" ]
 then
@@ -50,6 +47,11 @@ fi
 
 if [ -z "$mode" ] || [ -z "$branch" ] || [ -z "$container_image" ] || [ $# -lt 1 ]
 then
+    echo mode: $mode
+    echo branch: $branch
+    echo container_image: $container_image
+    echo $#: $#
+    echo "$@"
     echo "$usage"
     exit 1
 fi
@@ -105,12 +107,25 @@ set +ex
 # make a stamp file dated at time zero
 touch -t 197001010000 /tmp/$$.stamp
 
+# To reduce build time, we run tidy in the container and commit the
+# container with a temporary name, then use that temporary container
+# in the test loop, then delete it after the run.
+tmp_container_image=$container_image-tmp-delete-me
+docker run \
+    -v $(pwd):/mnt \
+    -w /mnt \
+    $container_image go mod tidy
+docker commit $(docker ps -lq) $tmp_container_image
+
 # loop until tests pass
 while true
 do
     # run tests
-    # XXX do this in a container
-    exec docker run --rm -v $(pwd):/mnt -w /mnt $container_image $0 -Z 2>&1 | tee /tmp/$$.test
+    docker run --rm \
+        -v $(pwd):/mnt \
+        -v $0:/tmp/tdaid \
+        -w /mnt \
+        $tmp_container_image /tmp/tdaid -Z 2>&1 | tee /tmp/$$.test
 
     case $mode in
         code)   sysmsg=$sysmsgcode
@@ -195,6 +210,9 @@ do
 
     sleep 1
 done
+
+# cleanup
+docker rmi $tmp_container_image
 
 echo "# to squash and merge the dev branch into main or master, run the following commands:"
 echo "git checkout main || git checkout master"
