@@ -112,7 +112,11 @@ while true
 do
     # run tests
     # XXX do this in a container
-    exec docker run --rm -v $(pwd):/mnt -w /mnt $container_image $0 -Z 2>&1 | tee /tmp/$$.test
+    exec docker run --rm \
+        -v $(pwd):/mnt \
+        -v $0:/tmp/tdaid \
+        -w /mnt \
+        $container_image /tmp/tdaid -Z 2>&1 | tee /tmp/$$.test
 
     case $mode in
         code)   sysmsg=$sysmsgcode
