@@ -1,7 +1,9 @@
 #!/bin/bash
 
-usage="usage: tdaid.sh {branch} {-c | -t | -s sysmsg } [outputfile1] [outputfile2] ...
+usage="usage: tdaid.sh { -b branch} { -I container_image } {-c | -t | -s sysmsg } [outputfile1] [outputfile2] ...
+    -b:  branch name
     -c:  write code
+    -I:  container image name
     -t:  write tests
     -s:  execute custom sysmsg
 "
@@ -10,20 +12,17 @@ cmdline="$0 $@"
 
 startTime=$(date +%s)
 
-branch=$1
-shift
-if [ -z "$branch" ]
-then
-    echo "$usage"
-    exit 1
-fi
-
 # parse command line options
-unset mode
-while getopts "cs:t" opt
+while getopts "b:cs:t" opt
 do
     case $opt in
+        b)  branch=$OPTARG
+            shift
+            ;;
         c)  mode=code
+            shift
+            ;;
+        I)  container_image=$OPTARG
             shift
             ;;
         t)  mode=tests
@@ -31,12 +30,25 @@ do
             ;;
         s)  mode=custom
             shift
-            sysmsgcustom=$1
+            sysmsgcustom=$OPTARG
+            shift
+            ;;
+        Z)  inContainer=1
             shift
             ;;
     esac
 done
-if [ -z "$mode" ]
+
+if [ -n "$inContainer" ]
+then
+    set -ex
+    go mod tidy
+    golint 
+    go test -v -timeout 1m
+    exit 0
+fi
+
+if [ -z "$mode" ] || [ -z "$branch" ] || [ -z "$container_image" ] || [ $# -lt 1 ]
 then
     echo "$usage"
     exit 1
@@ -97,11 +109,8 @@ touch -t 197001010000 /tmp/$$.stamp
 while true
 do
     # run tests
-    (
-        go mod tidy
-        golint 
-        go test -v -timeout 1m
-    ) 2>&1 | tee /tmp/$$.test
+    # XXX do this in a container
+    exec docker run --rm -v $(pwd):/mnt -w /mnt $container_image $0 -Z 2>&1 | tee /tmp/$$.test
 
     case $mode in
         code)   sysmsg=$sysmsgcode
@@ -159,6 +168,7 @@ do
     set +x
 
     # test for vet errors -- if found, don't commit
+    # XXX in container
     go vet || continue
 
     # commit new code or tests
