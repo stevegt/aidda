@@ -107,12 +107,14 @@ set +ex
 # make a stamp file dated at time zero
 touch -t 197001010000 /tmp/$$.stamp
 
+# XXX to reduce build time, might run tidy in container and commit the
+# container, then use that container in the test loop
+
 # loop until tests pass
 while true
 do
     # run tests
-    # XXX do this in a container
-    exec docker run --rm \
+    docker run --rm \
         -v $(pwd):/mnt \
         -v $0:/tmp/tdaid \
         -w /mnt \
