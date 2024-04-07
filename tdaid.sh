@@ -107,8 +107,15 @@ set +ex
 # make a stamp file dated at time zero
 touch -t 197001010000 /tmp/$$.stamp
 
-# XXX to reduce build time, might run tidy in container and commit the
-# container, then use that container in the test loop
+# To reduce build time, we run tidy in the container and commit the
+# container with a temporary name, then use that temporary container
+# in the test loop, then delete it after the run.
+tmp_container_image=$container_image-tmp-delete-me
+docker run \
+    -v $(pwd):/mnt \
+    -w /mnt \
+    $container_image go mod tidy
+docker commit $(docker ps -lq) $tmp_container_image
 
 # loop until tests pass
 while true
@@ -118,7 +125,7 @@ do
         -v $(pwd):/mnt \
         -v $0:/tmp/tdaid \
         -w /mnt \
-        $container_image /tmp/tdaid -Z 2>&1 | tee /tmp/$$.test
+        $tmp_container_image /tmp/tdaid -Z 2>&1 | tee /tmp/$$.test
 
     case $mode in
         code)   sysmsg=$sysmsgcode
@@ -203,6 +210,9 @@ do
 
     sleep 1
 done
+
+# cleanup
+docker rmi $tmp_container_image
 
 echo "# to squash and merge the dev branch into main or master, run the following commands:"
 echo "git checkout main || git checkout master"
