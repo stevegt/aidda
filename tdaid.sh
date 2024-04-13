@@ -10,8 +10,6 @@ usage="usage: tdaid.sh { -b branch} { -I container_image } {-c | -t | -s sysmsg 
 
 cmdline="$0 $@"
 
-startTime=$(date +%s)
-
 # parse command line options
 while getopts "b:cI:s:tZ" opt
 do
@@ -117,9 +115,18 @@ docker run \
     $container_image go mod tidy
 docker commit $(docker ps -lq) $tmp_container_image
 
-# loop until tests pass
+# loop until tests pass or timeout
+startTime=$(date +%s)
 while true
 do
+    # limit runtime to 20 minutes
+    endTime=$(date +%s)
+    if [ $(($endTime - $startTime)) -gt 1200 ]
+    then
+        echo "error: time limit exceeded"
+        break
+    fi
+
     # run tests
     docker run --rm \
         -v $(pwd):/mnt \
@@ -182,8 +189,14 @@ do
     fi
     set +x
 
+    # look for TESTERROR or CODEERROR
+    errcount=$(egrep "^(TESTERROR|CODEERROR)$" /tmp/$$.chat | wc -l)
+    if [ $errcount -gt 3 ]
+    then
+        break
+    fi
+
     # test for vet errors -- if found, don't commit
-    # XXX in container
     go vet || continue
 
     # commit new code or tests
@@ -192,21 +205,6 @@ do
     grok commit > /tmp/$$.commit
     git commit -F /tmp/$$.commit
     set +x
-
-    # look for TESTERROR or CODEERROR
-    errcount=$(egrep "^(TESTERROR|CODEERROR)$" /tmp/$$.chat | wc -l)
-    if [ $errcount -gt 3 ]
-    then
-        break
-    fi
-
-    # limit runtime to 20 minutes
-    endTime=$(date +%s)
-    if [ $(($endTime - $startTime)) -gt 1200 ]
-    then
-        echo "error: time limit exceeded"
-        break
-    fi
 
     sleep 1
 done
