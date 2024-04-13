@@ -196,9 +196,12 @@ do
         break
     fi
 
-    # test for vet errors -- if found, don't commit
-    go vet || continue
+    sleep 1
+done
 
+# test for vet errors -- if found, don't commit
+if go vet 
+then
     # commit new code or tests
     set -x
     git add $infns $outfns 
@@ -206,13 +209,11 @@ do
     git commit -F /tmp/$$.commit
     set +x
 
-    sleep 1
-done
+    echo "# to squash and merge the dev branch into main or master, run the following commands:"
+    echo "git checkout main || git checkout master"
+    echo "git merge --squash $branch"
+    echo "git commit"
+fi
 
 # cleanup
 docker rmi $tmp_container_image
-
-echo "# to squash and merge the dev branch into main or master, run the following commands:"
-echo "git checkout main || git checkout master"
-echo "git merge --squash $branch"
-echo "git commit"
