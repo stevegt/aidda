@@ -1,6 +1,6 @@
 #!/bin/bash
 
-usage="usage: tdaid.sh { -b branch} { -I container_image } {-c | -t | -s sysmsg } [outputfile1] [outputfile2] ...
+usage="usage: aidda.sh { -b branch} { -I container_image } {-c | -t | -s sysmsg } [outputfile1] [outputfile2] ...
     -b:  branch name
     -c:  write code
     -I:  container image name
@@ -130,9 +130,9 @@ do
     # run tests
     docker run --rm \
         -v $(pwd):/mnt \
-        -v $0:/tmp/tdaid \
+        -v $0:/tmp/aidda \
         -w /mnt \
-        $tmp_container_image /tmp/tdaid -Z 2>&1 | tee /tmp/$$.test
+        $tmp_container_image /tmp/aidda -Z 2>&1 | tee /tmp/$$.test
 
     case $mode in
         code)   sysmsg=$sysmsgcode
