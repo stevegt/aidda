@@ -1,31 +1,48 @@
 #!/bin/bash
 
-usage="usage: aidda.sh { -b branch} { -I container_image } {-c | -t | -s sysmsg } [outputfile1] [outputfile2] ...
-    -b:  branch name
+usage="usage: aidda.sh { -b branch} { -I container_image } {-a sysmsg | -c | -t | -s sysmsg } [-r] [-T timeout] [ -C chatfile ] [outputfile1] [outputfile2] ...
+    modes:
+    -a:  skip tests and provide advice
     -c:  write code
-    -I:  container image name
     -t:  write tests
     -s:  execute custom sysmsg
+
+    -b:  branch name
+    -C:  continue chat from existing chatfile
+    -I:  container image name
+    -r:  run tests with -race
+    -T:  test timeout e.g. '1m'
 "
 
 cmdline="$0 $@"
 
 # parse command line options
-while getopts "b:cI:s:tZ" opt
+containerArgs=""
+chatfile=/tmp/$$.chat
+while getopts "a:b:C:cI:rs:T:tZ:" opt
 do
     case $opt in
+        a)  mode=advice
+            sysmsgcustom=$OPTARG
+            ;;
         b)  branch=$OPTARG
+            ;;
+        C)  chatfile=$OPTARG
             ;;
         c)  mode=code
             ;;
         I)  container_image=$OPTARG
             ;;
+        r)  containerArgs="$containerArgs -race"
+            ;;
         s)  mode=custom
             sysmsgcustom=$OPTARG
             ;;
+        T)  containerArgs="$containerArgs -timeout $OPTARG"
+            ;;
         t)  mode=tests
             ;;
-        Z)  inContainer=1
+        Z)  inContainer="$OPTARG"
             ;;
         *)  echo "$usage"
             exit 1
@@ -39,7 +56,45 @@ then
     set -ex
     go mod tidy
     golint 
-    go test -v -timeout 1m
+    go test -v $inContainer ./...
+    exit 0
+fi
+
+# make a stamp file dated at time zero
+touch -t 197001010000 /tmp/$$.stamp
+# if chat file exists, set stamp time to chat file time
+if [ -e $chatfile ]
+then
+    touch -r $chatfile /tmp/$$.stamp
+fi
+
+outfns="$@"
+
+infns=$(find * -type f -newer /tmp/$$.stamp)
+
+infnsComma=$(echo $infns | tr ' ' ',')
+outfnsComma=$(echo $outfns | tr ' ' ',')
+
+if [ "$mode" == "advice" ] 
+then
+    if [ -z "$sysmsgcustom" ] 
+    then
+        echo "error: sysmsg required"
+        echo "$usage"
+        exit 1
+    fi
+    set -x
+    cmd="grok chat $chatfile"
+    if [ -n "$infnsComma" ]
+    then
+        cmd="$cmd -i $infnsComma"
+    fi
+    msgflag="-s"
+    if [ -e $chatfile ]
+    then
+        msgflag="-m"
+    fi
+    $cmd $msgflag "$sysmsgcustom" < /dev/null
     exit 0
 fi
 
@@ -54,22 +109,17 @@ then
     exit 1
 fi
 
-outfns="$@"
-
-infns=$(find * -type f)
-
-infnsComma=$(echo $infns | tr ' ' ',')
-outfnsComma=$(echo $outfns | tr ' ' ',')
-
-sysmsgcode="You are an expert Go programmer.  Write or fix code in
-[$outfns] to make the tests pass.  Do not ask me to do things -- take
-care of it yourself.  I am giving you all relevant files.  Do not mock
-the results.  Write complete, production-quality code.  Do not write
-stubs.  Do not omit code -- provide the complete file each time.  Do
-not enclose backticks in string literals -- you can't escape backticks
-in Go, so you'll need to build string literals with embedded backticks
-by using string concatenation. Include comments and follow the Go
-documentation conventions.  If you see an error in the tests, say
+sysmsgcode="You are an expert Go programmer.  Write, add, or fix the
+target code in [$outfns] to make the tests pass.  In case of conflict
+between tests and target code, consider the tests to be correct.
+Create any missing types, methods, or fields referenced by the tests.
+I am giving you all relevant files. Do not mock the results.  Write
+complete, production-quality code.  Do not write stubs.  Do not omit
+code -- provide the complete file each time.  Do not enclose backticks
+in string literals -- you can't escape backticks in Go, so you'll need
+to build string literals with embedded backticks by using string
+concatenation. Include comments and follow the Go documentation
+conventions.  If you are unable to follow these instructions, say
 TESTERROR on a line by itself and suggest a fix."
 
 sysmsgtest="You are an expert Go programmer.  Appends tests to
@@ -78,8 +128,8 @@ existing tests.  Do not inline multiline test data in Go files -- put
 test data in the given output data files.  Do not enclose backticks in
 string literals -- you can't escape backticks in Go, so you'll need to
 build string literals with embedded backticks by using string
-concatenation. If you see an error in the code, say CODEERROR on a
-line by itself and suggest a fix."
+concatenation. If you see an error in the code or need me to do
+anything, say CODEERROR on a line by itself and suggest a fix."
 
 # ensure repo is clean
 stat=$(git status --porcelain)
@@ -102,14 +152,17 @@ set -ex
 git merge --commit $curbranch
 set +ex
 
-# make a stamp file dated at time zero
-touch -t 197001010000 /tmp/$$.stamp
+tmp_container_image=$container_image-tmp-delete-me
+# cleanup any previous containers
+docker rmi $tmp_container_image 
+docker container ls -a -f label=aidda-delete-me -q | xargs docker rm
+docker image ls -a -f label=aidda-delete-me -q | xargs docker rmi
 
 # To reduce build time, we run tidy in the container and commit the
 # container with a temporary name, then use that temporary container
 # in the test loop, then delete it after the run.
-tmp_container_image=$container_image-tmp-delete-me
 docker run \
+    --label aidda-delete-me \
     -v $(pwd):/mnt \
     -w /mnt \
     $container_image go mod tidy
@@ -132,14 +185,14 @@ do
         -v $(pwd):/mnt \
         -v $0:/tmp/aidda \
         -w /mnt \
-        $tmp_container_image /tmp/aidda -Z 2>&1 | tee /tmp/$$.test
+        $tmp_container_image /tmp/aidda -Z "$containerArgs" 2>&1 | tee /tmp/$$.test
 
     case $mode in
         code)   sysmsg=$sysmsgcode
                 # if tests pass, exit
                 if ! grep -q "FAIL" /tmp/$$.test
                 then
-                    grok chat /tmp/$$.chat -i $infnsComma -s "Recommend additional tests to improve coverage and robustness of code." < /tmp/$$.test
+                    grok chat $chatfile -i $infnsComma -s "Recommend additional tests to improve coverage and robustness of code." < /tmp/$$.test
                     break
                 fi
                 ;;
@@ -183,15 +236,16 @@ do
     set -x
     if [ "$newfnsComma" != "" ]
     then
-        grok chat /tmp/$$.chat -i $infnsComma -o $outfnsComma -s "$sysmsg" < /tmp/$$.test
+        grok chat $chatfile -i $infnsComma -o $outfnsComma -s "$sysmsg" < /tmp/$$.test
     else
-        grok chat /tmp/$$.chat -o $outfnsComma -s "$sysmsg" < /tmp/$$.test
+        grok chat $chatfile -o $outfnsComma -s "$sysmsg" < /tmp/$$.test
     fi
     set +x
 
     # look for TESTERROR or CODEERROR
-    errcount=$(egrep "^(TESTERROR|CODEERROR)$" /tmp/$$.chat | wc -l)
-    if [ $errcount -gt 3 ]
+    errcount=$(egrep "^\s*(TESTERROR|CODEERROR)\s*$" $chatfile | wc -l)
+    # try to fix the error N times before giving up
+    if [ $errcount -gt 1 ]
     then
         break
     fi
