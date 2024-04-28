@@ -1,27 +1,31 @@
 #!/bin/bash
 
-usage="usage: aidda.sh { -b branch} { -I container_image } {-a sysmsg | -c | -t | -s sysmsg } [-r] [-T timeout] [ -C chatfile ] [outputfile1] [outputfile2] ...
+usage="usage: aidda.sh { -b branch} { -I container_image } {-a sysmsg | -c | -t | -s sysmsg } [-r] [-A 'go test' args ] [ -i input_files ] [outputfile1] [outputfile2] ...
     modes:
     -a:  skip tests and provide advice
     -c:  write code
     -t:  write tests
     -s:  execute custom sysmsg
 
+    -A:  extra arguments to pass to 'go test'
     -b:  branch name
     -C:  continue chat from existing chatfile
     -I:  container image name
+    -i:  input files, comma separated as in 'grok chat -i'
     -r:  run tests with -race
     -T:  test timeout e.g. '1m'
 "
-
+echo "aidda.sh $@"
 cmdline="$0 $@"
 
 # parse command line options
-containerArgs=""
-chatfile=/tmp/$$.chat
-while getopts "a:b:C:cI:rs:T:tZ:" opt
+containerArgs=" "
+chatfile=/tmp/aidda-$$.chat
+while getopts "A:a:b:C:cI:i:s:tZ:" opt
 do
     case $opt in
+        A)  containerArgs="$containerArgs $OPTARG"
+            ;;
         a)  mode=advice
             sysmsgcustom=$OPTARG
             ;;
@@ -33,12 +37,10 @@ do
             ;;
         I)  container_image=$OPTARG
             ;;
-        r)  containerArgs="$containerArgs -race"
+        i)  infnsComma=$OPTARG
             ;;
         s)  mode=custom
             sysmsgcustom=$OPTARG
-            ;;
-        T)  containerArgs="$containerArgs -timeout $OPTARG"
             ;;
         t)  mode=tests
             ;;
@@ -69,11 +71,13 @@ then
 fi
 
 outfns="$@"
-
-infns=$(find * -type f -newer /tmp/$$.stamp)
-
-infnsComma=$(echo $infns | tr ' ' ',')
 outfnsComma=$(echo $outfns | tr ' ' ',')
+
+if [ -z "infnsComma" ]
+then
+    infns=$(find * -type f -newer /tmp/$$.stamp)
+    infnsComma=$(echo $infns | tr ' ' ',')
+fi
 
 if [ "$mode" == "advice" ] 
 then
@@ -154,6 +158,8 @@ set +ex
 
 tmp_container_image=$container_image-tmp-delete-me
 # cleanup any previous containers
+docker container ls -a -f label=aidda-delete-me -q | xargs docker stop
+sleep 1
 docker rmi $tmp_container_image 
 docker container ls -a -f label=aidda-delete-me -q | xargs docker rm
 docker image ls -a -f label=aidda-delete-me -q | xargs docker rmi
