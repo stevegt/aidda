@@ -1,6 +1,6 @@
 #!/bin/bash
 
-usage="usage: aidda.sh { -b branch} { -I container_image } {-a sysmsg | -c | -t | -s sysmsg } [-r] [-A 'go test' args ] [ -i input_files ] [outputfile1] [outputfile2] ...
+usage="usage: aidda.sh { -b branch} { -I container_image } {-a sysmsg | -c | -t | -s sysmsg } [-A 'go test' args ] [ -i input_file ] [outputfile1] [outputfile2] ...
     modes:
     -a:  skip tests and provide advice
     -c:  write code
@@ -11,20 +11,20 @@ usage="usage: aidda.sh { -b branch} { -I container_image } {-a sysmsg | -c | -t 
     -b:  branch name
     -C:  continue chat from existing chatfile
     -I:  container image name
-    -i:  input files, comma separated as in 'grok chat -i'
-    -r:  run tests with -race
+    -i:  input file; can be repeated for multiple files
     -T:  test timeout e.g. '1m'
 "
 echo "aidda.sh $@"
 cmdline="$0 $@"
 
 # parse command line options
-containerArgs=" "
+testArgs="./..."
 chatfile=/tmp/aidda-$$.chat
+infns=""
 while getopts "A:a:b:C:cI:i:s:tZ:" opt
 do
     case $opt in
-        A)  containerArgs="$containerArgs $OPTARG"
+        A)  testArgs="$OPTARG"
             ;;
         a)  mode=advice
             sysmsgcustom=$OPTARG
@@ -37,7 +37,7 @@ do
             ;;
         I)  container_image=$OPTARG
             ;;
-        i)  infnsComma=$OPTARG
+        i)  infns="$infns $OPTARG"
             ;;
         s)  mode=custom
             sysmsgcustom=$OPTARG
@@ -58,7 +58,7 @@ then
     set -ex
     go mod tidy
     golint 
-    go test -v $inContainer ./...
+    go test -v $inContainer
     exit 0
 fi
 
@@ -73,7 +73,7 @@ fi
 outfns="$@"
 outfnsComma=$(echo $outfns | tr ' ' ',')
 
-if [ -z "$infnsComma" ]
+if [ -z "$infns" ]
 then
     infns=$(find * -type f -newer /tmp/$$.stamp)
     infnsComma=$(echo $infns | tr ' ' ',')
@@ -126,7 +126,7 @@ concatenation. Include comments and follow the Go documentation
 conventions.  If you are unable to follow these instructions, say
 TESTERROR on a line by itself and suggest a fix."
 
-sysmsgtest="You are an expert Go programmer.  Appends tests to
+sysmsgtest="You are an expert Go programmer.  Append tests to
 [$outfns] to make the code more robust.  Do not alter or insert before
 existing tests.  Do not inline multiline test data in Go files -- put
 test data in the given output data files.  Do not enclose backticks in
@@ -191,7 +191,7 @@ do
         -v $(pwd):/mnt \
         -v $0:/tmp/aidda \
         -w /mnt \
-        $tmp_container_image /tmp/aidda -Z "$containerArgs" 2>&1 | tee /tmp/$$.test
+        $tmp_container_image /tmp/aidda -Z "$testArgs" 2>&1 | tee /tmp/$$.test
 
     case $mode in
         code)   sysmsg=$sysmsgcode
@@ -242,7 +242,7 @@ do
     set -x
     if [ "$newfnsComma" != "" ]
     then
-        grok chat $chatfile -i $infnsComma -o $outfnsComma -s "$sysmsg" < /tmp/$$.test
+        grok chat $chatfile -i $newfnsComma -o $outfnsComma -s "$sysmsg" < /tmp/$$.test
     else
         grok chat $chatfile -o $outfnsComma -s "$sysmsg" < /tmp/$$.test
     fi
