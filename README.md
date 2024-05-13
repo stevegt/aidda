@@ -15,10 +15,12 @@ a development cycle that looks like this:
   the comments.  When the test cases pass, the tool will generate some
   recommendations for further development and then exit.
 
+See the output of `aidda -h` for usage for now.
+
 I use aidda every day.  It's a great way to at least get a first draft
 of code written and explore solutions to a problem space.  I tend to
-step into the code (still using github copilot) to work out details
-and get the algo unstuck when it writes itself into a corner. I've
+step into the code (still using github copilot) to work out details or
+to get the algo unstuck when it writes itself into a corner. I've
 found that the 128k-token version of GPT-4 is pretty capable otherwise
 -- this won't work well with smaller token limits or earlier versions
 of GPT.
@@ -32,8 +34,8 @@ At this point the tool is simply a shell script and is specific to
 generating Go code on Linux.  I expect after the dust settles I'll
 likely use aidda.sh to generate aidda.go for a compiled version of the
 tool, and that will better enable the complexity needed to support
-other languages or operating systems.  I'm open to pull requests, but
-am otherwise pretty head-down actually using aidda as-is to work on
-some Go-specific projects at the moment.
+more capabilities. I'm open to pull requests, but am otherwise pretty
+head-down actually using aidda as-is to work on some Go-specific
+projects at the moment.
 
 -- Steve
