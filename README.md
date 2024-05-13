@@ -29,9 +29,11 @@ weak, ambiguous, or just plain wrong; this has always been a pitfall
 with pure TDD or BDD.
 
 At this point the tool is simply a shell script and is specific to
-generating Go code.  I expect after the dust settles I'll likely use
-aidda.sh to generate aidda.go for a compiled version of the tool, and
-after that may come support for other languages.  I'm open to pull
-requests, but am pretty head-down on other projects at the moment.
+generating Go code on Linux.  I expect after the dust settles I'll
+likely use aidda.sh to generate aidda.go for a compiled version of the
+tool, and that will better enable the complexity needed to support
+other languages or operating systems.  I'm open to pull requests, but
+am otherwise pretty head-down actually using aidda as-is to work on
+some Go-specific projects at the moment.
 
 -- Steve
