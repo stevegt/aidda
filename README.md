@@ -34,4 +34,4 @@ aidda.sh to generate aidda.go for a compiled version of the tool, and
 after that may come support for other languages.  I'm open to pull
 requests, but am pretty head-down on other projects at the moment.
 
-- Steve
+-- Steve
