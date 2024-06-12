@@ -1,6 +1,6 @@
 #!/bin/bash
 
-usage="usage: aidda.sh { -b branch} { -I container_image } {-a sysmsg | -c | -t | -s sysmsg } [-A 'go test' args ] [ -i input_file ] [outputfile1] [outputfile2] ...
+usage="usage: aidda.sh { -b branch} { -I container_image } {-a sysmsg | -c | -t | -s sysmsg } [-A 'go test' args ] [ -p input_patterns_file ] [outputfile1] [outputfile2] ...
     modes:
     -a:  skip tests and provide advice
     -c:  write code
@@ -11,7 +11,7 @@ usage="usage: aidda.sh { -b branch} { -I container_image } {-a sysmsg | -c | -t 
     -b:  branch name
     -C:  continue chat from existing chatfile
     -I:  container image name
-    -i:  input file; can be repeated for multiple files
+    -p:  file containing input filename patterns
     -T:  test timeout e.g. '1m'
 "
 echo "aidda.sh $@"
@@ -37,7 +37,7 @@ do
             ;;
         I)  container_image=$OPTARG
             ;;
-        i)  infns="$infns $OPTARG"
+        p)  inpatfn=$OPTARG
             ;;
         s)  mode=custom
             sysmsgcustom=$OPTARG
@@ -73,11 +73,22 @@ fi
 outfns="$@"
 outfnsComma=$(echo $outfns | tr ' ' ',')
 
-if [ -z "$infns" ]
+if [ -n "$inpatfn" ]
 then
+    # input files are all of those in the current directory that match
+    # the input patterns
+    set -ex
+    cat $inpatfn | while read inpat
+    do
+        infns="$infns $(find . -type f -name $inpat)"
+    done
+    set +x
+else
+    # input files are all of those newer than the stamp file
     infns=$(find * -type f -newer /tmp/$$.stamp)
     infnsComma=$(echo $infns | tr ' ' ',')
 fi
+echo "infns: $infns"
 
 if [ "$mode" == "advice" ] 
 then
