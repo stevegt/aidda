@@ -60,7 +60,7 @@ func executeActionInContainer(action Action) (string, error) {
 	case <-statusCh:
 	}
 
-	out, err := cli.ContainerLogs(ctx, resp.ID, types.ContainerLogsOptions{ShowStdout: true})
+	out, err := cli.ContainerLogs(ctx, resp.ID, types.ContainerLogsOptions{ShowStdout: true, ShowStderr: true})
 	if err != nil {
 		return "", err
 	}
@@ -141,7 +141,7 @@ func queryGPT(userInstruction string, validActions map[string]string) (string, e
 	defer resp.Body.Close()
 
 	var gptResp GPTResponse
-	if err := json.NewDecoder(resp.Body).Decode(& gptResp); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&gptResp); err != nil {
 		return "", err
 	}
 
