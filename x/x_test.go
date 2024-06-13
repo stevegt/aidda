@@ -6,71 +6,92 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// Tests for cleanUserQuery
-func TestCleanUserQuery_QueriesWithSpecialCharacters(t *testing.T) {
+func TestParseActions(t *testing.T) {
 	tests := []struct {
-		name   string
-		input  string
-		expect string
+		name        string
+		response    string
+		valid       []Action
+		expectError bool
+		expected    []Action
 	}{
 		{
-			name:   "Query with special characters",
-			input:  "SELECT * FROM users WHERE name='John #Doe'; #comment",
-			expect: "SELECT * FROM users WHERE name='John #Doe';",
+			name:     "Valid single action",
+			response: "push origin main",
+			valid: []Action{
+				{Name: "push", Args: []string{"origin", "main"}},
+			},
+			expectError: false,
+			expected: []Action{
+				{Name: "push", Args: []string{"origin", "main"}},
+			},
 		},
 		{
-			name:   "Complex query spread across multiple lines",
-			input:  "SELECT *\n# This is a comment\nFROM users;\n# Another comment\nWHERE id > 10;",
-			expect: "SELECT *\nFROM users;\nWHERE id > 10;",
+			name:     "Invalid action",
+			response: "update origin main",
+			valid: []Action{
+				{Name: "push", Args: []string{"origin", "main"}},
+				{Name: "fetch", Args: []string{"origin"}},
+			},
+			expectError: true,
 		},
 		{
-			name:   "Query ending with comment",
-			input:  "SELECT * FROM users; #final comment",
-			expect: "SELECT * FROM users;",
+			name:     "Multiple actions",
+			response: "push origin main\nfetch origin",
+			valid: []Action{
+				{Name: "push", Args: []string{"origin", "main"}},
+				{Name: "fetch", Args: []string{"origin"}},
+			},
+			expectError: false,
+			expected: []Action{
+				{Name: "push", Args: []string{"origin", "main"}},
+				{Name: "fetch", Args: []string{"origin"}},
+			},
 		},
 	}
-
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := cleanUserQuery(tt.input)
-			assert.Equal(t, tt.expect, result)
+		t.Run(tt.name, func(t *testing.T) { // Corrected function declaration
+			actions, err := parseActions(tt.response, tt.valid)
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expected, actions)
+			}
 		})
 	}
 }
 
-// Tests for formatValidActions
-func TestFormatValidActions_WithSortedOutput(t *testing.T) {
-	actions := map[string]string{
-		"zAction": "Last action",
-		"aAction": "First action",
-		"mAction": "Middle action",
+func TestParseArguments(t *testing.T) {
+	tests := []struct {
+		name     string
+		fields   []string
+		expected []string
+	}{
+		{
+			name:     "Simple arguments",
+			fields:   []string{"arg1", "arg2"},
+			expected: []string{"arg1", "arg2"},
+		},
+		{
+			name:     "Arguments with spaces",
+			fields:   []string{"'arg 1'", "\"arg 2\""},
+			expected: []string{"arg 1", "arg 2"},
+		},
+		{
+			name:     "Mixed arguments",
+			fields:   []string{"arg1", "'arg 2'", "arg3"},
+			expected: []string{"arg1", "arg 2", "arg3"},
+		},
+		{
+			name:     "Quoted argument with embedded quote",
+			fields:   []string{"\"arg'2\"", "'arg\"3'"},
+			expected: []string{"arg'2", "arg\"3"},
+		},
 	}
-	expected := "Valid actions:\naAction: First action\nmAction: Middle action\nzAction: Last 	action\n"
-	result := formatValidActions(actions)
-	assert.Equal(t, expected, result)
-}
-
-// Tests for parseActions
-func TestParseActions_WithInvalidActions(t *testing.T) {
-	response := "invalidAction param1\nvalidAction param2 param3\n"
-	valid := map[string]string{
-		"validAction": "A valid action",
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := parseArguments(tt.fields)
+			assert.Equal(t, tt.expected, result)
+		})
 	}
-	expected := []Action{
-		{Name: "validAction", Args: []string{"param2", "param3"}},
-	}
-	result := parseActions(response, valid)
-	assert.Equal(t, expected, result)
-}
-
-func TestParseActions_WithSpecialCharacters(t *testing.T) {
-	response := "specialAction 'param with spaces' \"another param\"\n"
-	valid := map[string]string{
-		"specialAction": "Handles special character cases",
-	}
-	expected := []Action{
-		{Name: "specialAction", Args: []string{"'param with spaces'", "\"another param\""}},
-	}
-	result := parseActions(response, valid)
-	assert.Equal(t, expected, result)
 }
