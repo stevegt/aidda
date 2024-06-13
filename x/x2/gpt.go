@@ -10,27 +10,33 @@ import (
 	"strings"
 )
 
-// GPTRequest struct represents the request body for the OpenAI API.
-type GPTRequest struct {
-	Model       string   `json:"model"`
-	Prompt      string   `json:"prompt"`
-	MaxTokens   int      `json:"max_tokens"`
-	Temperature float64  `json:"temperature"`
-	TopP        float64  `json:"top_p"`
-	N           int      `json:"n"`
-	Stop        []string `json:"stop,omitempty"`
+// Message struct represents a single message in a conversation
+type Message struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
 }
 
-// GPTResponse struct represents the response from the OpenAI API.
+// GPTRequest struct represents the request body for the OpenAI API
+type GPTRequest struct {
+	Model       string    `json:"model"`
+	Messages    []Message `json:"messages"`
+	MaxTokens   int       `json:"max_tokens"`
+	Temperature float64   `json:"temperature"`
+	TopP        float64   `json:"top_p"`
+	N           int       `json:"n"`
+	Stop        []string  `json:"stop,omitempty"`
+}
+
+// GPTResponse struct represents the response from the OpenAI API
 type GPTResponse struct {
 	Choices []struct {
-		Text string `json:"text"`
+		Message Message `json:"message"`
 	} `json:"choices"`
 }
 
-// Function to query GPT-4 API.
+// Function to query GPT-4 API
 func queryGPT(userInstruction string, validActions map[string]string) (string, error) {
-	apiKey := os.Getenv("OPENAI_API_KEY")
+	apiKey := os.Getenv("GPT_API_KEY")
 	if apiKey == "" {
 		return "", fmt.Errorf("API key not set")
 	}
@@ -38,9 +44,14 @@ func queryGPT(userInstruction string, validActions map[string]string) (string, e
 	actionsStr := formatValidActions(validActions)
 	prompt := fmt.Sprintf("User instruction: '%s'\n\n%s\nPlease provide the actions to be taken.", userInstruction, actionsStr)
 
+	messages := []Message{
+		{Role: "system", Content: "You are a helpful assistant."},
+		{Role: "user", Content: prompt},
+	}
+
 	requestBody := GPTRequest{
-		Model:       "gpt-4",
-		Prompt:      prompt,
+		Model:       "gpt-4o",
+		Messages:    messages,
 		MaxTokens:   100,
 		Temperature: 0.7,
 		TopP:        1.0,
@@ -82,10 +93,10 @@ func queryGPT(userInstruction string, validActions map[string]string) (string, e
 		return "", fmt.Errorf("no choices returned")
 	}
 
-	return gptResp.Choices[0].Text, nil
+	return gptResp.Choices[0].Message.Content, nil
 }
 
-// Function to format the valid actions for the GPT prompt.
+// Function to format the valid actions for the GPT prompt
 func formatValidActions(validActions map[string]string) string {
 	var sb strings.Builder
 	sb.WriteString("Valid actions:\n")
@@ -95,7 +106,7 @@ func formatValidActions(validActions map[string]string) string {
 	return sb.String()
 }
 
-// Function to parse actions from GPT response.
+// Function to parse actions from GPT response
 func parseActions(response string, validActions map[string]string) []Action {
 	var actions []Action
 	lines := strings.Split(response, "\n")
