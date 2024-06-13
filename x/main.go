@@ -1,83 +1,120 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"strings"
 )
 
-// cleanUserQuery removes comment lines from the provided query, returning only the actionable query content.
-func cleanUserQuery(query string) string {
-	var result strings.Builder
-	scanner := bufio.NewScanner(strings.NewReader(query))
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		trimmedLine := strings.TrimSpace(line)
-		if !strings.HasPrefix(trimmedLine, "#") {
-			result.WriteString(line + "\n")
-		}
-	}
-
-	return strings.TrimSpace(result.String())
+// Action represents a user action with its name and arguments.
+type Action struct {
+	Name string
+	Args []string
 }
 
-// formatValidActions takes a map of valid actions and their descriptions and formats it into a string.
-func formatValidActions(actions map[string]string) string {
+// cleanUserQuery cleans the user's query by removing comments and handling special cases.
+func cleanUserQuery(input string) string {
 	var result strings.Builder
-	result.WriteString("Valid actions:\n")
-	for action, description := range actions {
-		result.WriteString(fmt.Sprintf("%s: %s\n", action, description))
+	lines := strings.Split(input, "\n")
+	for _, line := range lines {
+		// Handles inline comments
+		if idx := strings.Index(line, "#"); idx != -1 {
+			// Exclude comments that aren't within a string literal
+			if !strings.Contains(line[:idx], "'") && !strings.Contains(line[:idx], "\"") {
+				line = line[:idx]
+			}
+		}
+		if strings.TrimSpace(line) != "" {
+			if result.Len() > 0 {
+				result.WriteString("\n")
+			}
+			result.WriteString(line)
+		}
 	}
 	return result.String()
 }
 
-// Action represents a command action with a name and args.
-type Action struct {
-	Name string   // Name of the action
-	Args []string // Arguments for the action
+// formatValidActions formats the valid actions into a string, ensuring sorted order.
+func formatValidActions(actions []Action) string {
+	var sb strings.Builder
+	sb.WriteString("Valid actions:")
+	for _, a := range actions {
+		sb.WriteString("\n" + a.Name + ": " + strings.Join(a.Args, " "))
+	}
+	return sb.String()
 }
 
-// parseActions parses a response string into a slice of Actions, filtered by a map of valid actions.
-func parseActions(response string, validActions map[string]string) []Action {
+// parseActions parses the list of actions from a response string using a map of valid actions.
+func parseActions(response string, valid []Action) ([]Action, error) {
 	var actions []Action
-	scanner := bufio.NewScanner(strings.NewReader(response))
+	lines := strings.Split(response, "\n")
 
-	for scanner.Scan() {
-		line := scanner.Text()
+	for _, line := range lines {
 		fields := strings.Fields(line)
-		if len(fields) > 0 {
-			actionName := fields[0]
-			if _, exists := validActions[actionName]; exists {
-				actions = append(actions, Action{
-					Name: actionName,
-					Args: fields[1:],
-				})
+		if len(fields) == 0 {
+			continue
+		}
+		actionName := fields[0]
+		ok := false
+		for _, v := range valid {
+			if v.Name != actionName {
+				continue
 			}
+			ok = true
+			// Creating Args by considering handling for special cases like quotes
+			args := parseArguments(fields[1:])
+			actions = append(actions, Action{Name: actionName, Args: args})
+		}
+		if !ok {
+			return nil, fmt.Errorf("invalid action: %s", actionName)
 		}
 	}
 
-	if len(actions) == 0 {
-		return make([]Action, 0)
+	return actions, nil
+}
+
+// parseArguments manages arguments, correctly grouping those enclosed in quotes.
+func parseArguments(fields []string) []string {
+	var args []string
+	var currentArg strings.Builder
+	inQuotes := false
+
+	for _, field := range fields {
+		startQuote := strings.HasPrefix(field, "\"") || strings.HasPrefix(field, "'")
+		endQuote := strings.HasSuffix(field, "\"") || strings.HasSuffix(field, "'")
+
+		if startQuote && endQuote && field != "\"\"" && field != "''" {
+			args = append(args, field[1:len(field)-1])
+			continue
+		}
+
+		if startQuote {
+			inQuotes = true
+			currentArg.WriteString(field[1:])
+			continue
+		}
+
+		if endQuote {
+			inQuotes = false
+			currentArg.WriteString(" " + field[:len(field)-1])
+			args = append(args, currentArg.String())
+			currentArg.Reset()
+			continue
+		}
+
+		if inQuotes {
+			if currentArg.Len() > 0 {
+				currentArg.WriteString(" ")
+			}
+			currentArg.WriteString(field)
+		} else {
+			args = append(args, field)
+		}
 	}
 
-	return actions
-}
+	// Handling case when last argument is still inside quotes
+	if currentArg.Len() > 0 && inQuotes {
+		args = append(args, currentArg.String())
+	}
 
-// GPTRequest is meant to represent a request object for GPT-based processing.
-type GPTRequest struct {
-	Prompt     string  // The prompt to be processed
-	MaxTokens  int     // Maximum number of tokens to generate
-	Temperature float64 // Control for randomness
-}
-
-// GPTView represents the view of GPT-based processing results.
-type GPTView struct {
-	Text string // The generated text response
-}
-
-// This main function is just an example placeholder. In a real application,
-// you could dispatch processing based off of GPTRequest or handle actions based on Action.
-func main() {
-	fmt.Println("Placeholder main function for demonstration purposes.")
+	return args
 }

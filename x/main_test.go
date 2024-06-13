@@ -82,11 +82,11 @@ func TestParseActions(t *testing.T) {
 	tests := []struct {
 		name     string
 		response string
-		valid    map[string]string
+		valid    []Action
 		expect   []Action
 	}{
 		{
-			name: "Valid single action",
+			name:     "Valid single action",
 			response: "runTests ./...\n",
 			valid: map[string]string{
 				"runTests": "Run go tests on package",
@@ -96,10 +96,10 @@ func TestParseActions(t *testing.T) {
 			},
 		},
 		{
-			name: "Multiple actions",
+			name:     "Multiple actions",
 			response: "runTests ./pkg1\nqueryGopls symbol definition\n",
 			valid: map[string]string{
-				"runTests":  "Run go tests on package",
+				"runTests":   "Run go tests on package",
 				"queryGopls": "Query gopls server",
 			},
 			expect: []Action{
@@ -111,7 +111,7 @@ func TestParseActions(t *testing.T) {
 			name:     "No valid actions",
 			response: "nonexistentAction param1\n",
 			valid: map[string]string{
-				"runTests":  "Run go tests on package",
+				"runTests": "Run go tests on package",
 			},
 			expect: []Action{},
 		},
