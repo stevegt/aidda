@@ -214,11 +214,7 @@ do
                 fi
                 ;;
         tests)  sysmsg=$sysmsgtest
-                # if tests fail, exit
-                if grep -q "FAIL" /tmp/$$.test
-                then
-                    break
-                fi
+                # keep generating tests until ^C or timeout
                 ;;
         custom) sysmsg=$sysmsgcustom
                 # if tests pass, exit
