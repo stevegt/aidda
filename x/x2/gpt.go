@@ -30,7 +30,7 @@ type GPTResponse struct {
 
 // Function to query GPT-4 API.
 func queryGPT(userInstruction string, validActions map[string]string) (string, error) {
-	apiKey := os.Getenv("GPT_API_KEY")
+	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {
 		return "", fmt.Errorf("API key not set")
 	}
@@ -53,7 +53,7 @@ func queryGPT(userInstruction string, validActions map[string]string) (string, e
 		return "", err
 	}
 
-	req, err := http.NewRequest("POST", "https://api.openai.com/v1/completions", bytes.NewBuffer(requestJSON))
+	req, err := http.NewRequest("POST", "https://api.openai.com/v1/chat/completions", bytes.NewBuffer(requestJSON))
 	if err != nil {
 		return "", err
 	}

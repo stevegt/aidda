@@ -1,74 +1,18 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
 	"strings"
-
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/client"
 )
 
 // Action struct to represent an action with its arguments
 type Action struct {
 	Name string
 	Args []string
-}
-
-// Function to create Docker client
-func createDockerClient() (*client.Client, error) {
-	return client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
-}
-
-// Function to execute action in Docker container
-func executeActionInContainer(action Action) (string, error) {
-	cli, err := createDockerClient()
-	if err != nil {
-		return "", err
-	}
-
-	ctx := context.Background()
-
-	resp, err := cli.ContainerCreate(ctx, &container.Config{
-		Image: "golang:1.18",
-		Cmd:   []string{"go", "run", "actionRunner.go", action.Name, strings.Join(action.Args, " ")},
-		Tty:   false,
-	}, nil, nil, nil, "")
-	if err != nil {
-		return "", err
-	}
-
-	defer cli.ContainerRemove(ctx, resp.ID, container.RemoveOptions{Force: true})
-
-	if err := cli.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
-		return "", err
-	}
-
-	statusCh, errCh := cli.ContainerWait(ctx, resp.ID, container.WaitConditionNotRunning)
-	select {
-	case err := <-errCh:
-		if err != nil {
-			return "", err
-		}
-	case <-statusCh:
-	}
-
-	out, err := cli.ContainerLogs(ctx, resp.ID, container.LogsOptions{ShowStdout: true, ShowStderr: true})
-	if err != nil {
-		return "", err
-	}
-	defer out.Close()
-
-	logs, err := ioutil.ReadAll(out)
-	if err != nil {
-		return "", err
-	}
-
-	return string(logs), nil
 }
 
 // Function to execute actions and handle errors
