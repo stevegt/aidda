@@ -16,7 +16,7 @@ type Action struct {
 }
 
 // Function to execute actions and handle errors
-func executeActions(actions []Action) ([]string, error) {
+func executeActions(image string, actions []Action) ([]string, error) {
 	var results []string
 	for _, action := range actions {
 		var result string
@@ -25,7 +25,7 @@ func executeActions(actions []Action) ([]string, error) {
 		if action.Name == "queryUser" {
 			result = handleUserQuery(action.Args)
 		} else {
-			result, err = executeActionInContainer(action)
+			result, err = executeActionInContainer(action, image)
 		}
 
 		if err != nil {
@@ -107,11 +107,11 @@ func cleanUserQuery(input string) string {
 
 // Main function
 func main() {
-	// Example GPT message
-	gptMessage := "Here is a message from GPT. Please provide your query based on this information."
+
+	image := "aidda-x2:0"
 
 	// Step 1: Launch editor with template
-	template := formatTemplate(gptMessage)
+	template := formatTemplate("")
 	userQuery, err := launchEditor(template)
 	if err != nil {
 		log.Fatalf("Error launching editor: %v\n", err)
@@ -122,14 +122,12 @@ func main() {
 
 	// Define valid actions
 	validActions := map[string]string{
-		"queryGopls":         "queryGopls args...",
-		"fetchLinesFromFile": "fetchLinesFromFile path startLine endLine",
-		"fetchFile":          "fetchFile path",
-		"changeFile":         "changeFile path newContent",
-		"changeLines":        "changeLines path startLine endLine newContent",
-		"createFile":         "createFile path content",
-		"runTests":           "runTests packagePath",
-		"queryUser":          "queryUser query",
+		"queryGopls": "runs 'gopls args...'",
+		"fetchFile":  "returns the contents of {path}",
+		"writeFile":  "writeFile {path} {base64 encoded content}",
+		"runTests":   "run 'go test -v ./...'",
+		"queryUser":  "ask user for input",
+		"listFiles":  "list all files recursively",
 	}
 
 	// Step 3: Forward the query to GPT-4o with valid actions
@@ -142,7 +140,7 @@ func main() {
 	actions := parseActions(gptResponse, validActions)
 
 	// Step 5: Execute actions
-	results, err := executeActions(actions)
+	results, err := executeActions(image, actions)
 	if err != nil {
 		log.Fatalf("Error executing actions: %v\n", err)
 	}

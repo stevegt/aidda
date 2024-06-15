@@ -15,7 +15,7 @@ func createDockerClient() (*client.Client, error) {
 }
 
 // Function to execute action in Docker container
-func executeActionInContainer(action Action) (string, error) {
+func executeActionInContainer(image string, action Action) (string, error) {
 	cli, err := createDockerClient()
 	if err != nil {
 		return "", err
@@ -30,7 +30,7 @@ func executeActionInContainer(action Action) (string, error) {
 	ctx := context.Background()
 
 	resp, err := cli.ContainerCreate(ctx, &container.Config{
-		Image: "golang:1.18",
+		Image: image,
 		Tty:   false,
 	}, hostConfig, nil, nil, "")
 	if err != nil {
