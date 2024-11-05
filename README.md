@@ -1,3 +1,7 @@
+# For at least the time being, AIDDA's code has been migrated into the [grokker](https://github.com/stevegt/grokker) aidda subcommand and continues to evolve there.
+
+---
+
 # aidda
 
 AI-Driven Development (AIDD) Assistant: uses
